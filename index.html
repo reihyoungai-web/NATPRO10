@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>ASNP NATPRO10 in JEJU island</title>
-  <meta name="description" content="Jeju-themed web game playable on desktop and mobile." />
+  <meta name="description" content="Retro Jeju web game with octopus, dolphin, and hallabong icons." />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -17,7 +17,7 @@
         </div>
         <div class="hud-stats">
           <div class="stat"><span>점수</span><strong id="score">0</strong></div>
-          <div class="stat"><span>남은 시간</span><strong id="timer">45</strong></div>
+          <div class="stat"><span>남은 시간</span><strong id="timer">60</strong></div>
           <div class="stat"><span>최고 점수</span><strong id="bestScore">0</strong></div>
         </div>
       </header>
@@ -30,9 +30,14 @@
             <p class="overlay-badge">JEJU RETRO STAGE</p>
             <h2>ASNP NATPRO10 in JEJU island</h2>
             <p class="overlay-copy">
-              제주 바다를 배경으로 돌하르방을 던져 해양 생물을 맞히세요.<br />
-              모바일에서는 화면을 터치하고, PC에서는 클릭 또는 스페이스바를 사용하세요.
+              Avant Arte 스타일의 원버튼 스코어 어택 느낌으로 재구성했습니다.<br />
+              클릭 / 터치 / 스페이스바로 아이콘을 발사하고, 같은 아이콘을 맞혀 점수를 얻으세요.
             </p>
+            <div class="legend-row">
+              <span>🐙 문어</span>
+              <span>🐬 돌고래</span>
+              <span>🍊 한라봉</span>
+            </div>
             <p id="blinkText" class="blink">TOUCH TO THROW</p>
             <button id="startBtn" class="primary-btn">게임 시작</button>
           </div>
@@ -52,7 +57,7 @@
       </section>
 
       <footer class="game-footer">
-        <p>조작: 터치 / 클릭 / 스페이스바</p>
+        <p>조작: 터치 / 클릭 / 스페이스바 · 같은 아이콘을 맞히면 고득점</p>
         <p><a href="admin.html">관리자 페이지</a> · GitHub Pages 배포 가능</p>
       </footer>
     </section>
