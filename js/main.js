@@ -25,10 +25,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
   bestEl.textContent = String(Number(localStorage.getItem('natpro10-best-score') || 0));
 
+  const unlockAudio = () => {
+    window.retroAudio?.warmupAndStart();
+  };
+
   const startGame = () => {
+    unlockAudio();
     startOverlay.classList.remove('show');
     gameOverOverlay.classList.remove('show');
-    window.retroAudio?.start();
     game.start();
   };
 
@@ -40,20 +44,39 @@ window.addEventListener('DOMContentLoaded', () => {
     muteBtn.textContent = enabled ? '사운드 끄기' : '사운드 켜기';
   });
 
-  const throwAction = (event) => {
-    if (event?.target?.closest?.('button')) return;
-    game.throwProjectile();
-  };
+  canvas.addEventListener('pointermove', (event) => {
+    game.movePointer(event.clientX);
+  });
 
-  canvas.addEventListener('pointerdown', throwAction);
+  canvas.addEventListener('pointerdown', (event) => {
+    unlockAudio();
+    game.movePointer(event.clientX);
+    if (!startOverlay.classList.contains('show') && !gameOverOverlay.classList.contains('show')) {
+      game.throwProjectile();
+    }
+  });
+
+  document.addEventListener('pointerdown', () => {
+    if (startOverlay.classList.contains('show')) {
+      unlockAudio();
+    }
+  }, { once: true });
+
   document.addEventListener('keydown', (event) => {
     if (event.code === 'Space') {
       event.preventDefault();
+      unlockAudio();
       if (startOverlay.classList.contains('show') || gameOverOverlay.classList.contains('show')) {
         startGame();
       } else {
         game.throwProjectile();
       }
+    }
+    if (event.code === 'ArrowLeft') {
+      game.pointerX = Math.max(70, game.pointerX - 32);
+    }
+    if (event.code === 'ArrowRight') {
+      game.pointerX = Math.min(canvas.width - 70, game.pointerX + 32);
     }
   });
 });

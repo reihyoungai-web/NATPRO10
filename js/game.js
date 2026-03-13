@@ -1,27 +1,36 @@
 (function () {
+  const TYPES = {
+    octopus: { emoji: '🐙', color: '#fb7185', points: 15 },
+    dolphin: { emoji: '🐬', color: '#60a5fa', points: 15 },
+    hallabong: { emoji: '🍊', color: '#fbbf24', points: 12 },
+  };
+  const ORDER = ['octopus', 'dolphin', 'hallabong'];
+
   class JejuGame {
     constructor(canvas, onUpdate, onGameOver) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
       this.onUpdate = onUpdate;
       this.onGameOver = onGameOver;
-      this.reset();
       this.loop = this.loop.bind(this);
+      this.reset();
     }
 
     reset() {
       this.running = false;
       this.score = 0;
+      this.combo = 0;
       this.best = Number(localStorage.getItem('natpro10-best-score') || 0);
-      this.timeLeft = 45;
+      this.timeLeft = 60;
       this.lastTime = 0;
       this.timerAcc = 0;
       this.spawnAcc = 0;
       this.projectiles = [];
       this.targets = [];
       this.particles = [];
-      this.player = { x: 110, y: this.canvas.height - 110, size: 34 };
-      this.wave = 0;
+      this.player = { x: this.canvas.width / 2, y: this.canvas.height - 92, size: 42 };
+      this.nextTypeIndex = 0;
+      this.pointerX = this.player.x;
       this.updateHud();
     }
 
@@ -41,61 +50,90 @@
       }
     }
 
+    currentType() {
+      return ORDER[this.nextTypeIndex % ORDER.length];
+    }
+
+    movePointer(clientX) {
+      const rect = this.canvas.getBoundingClientRect();
+      const scale = this.canvas.width / rect.width;
+      this.pointerX = Math.max(70, Math.min(this.canvas.width - 70, (clientX - rect.left) * scale));
+    }
+
     throwProjectile() {
       if (!this.running) return;
+      const key = this.currentType();
+      const data = TYPES[key];
       this.projectiles.push({
-        x: this.player.x + 26,
-        y: this.player.y - 24,
-        vx: 7.8,
-        vy: -8.8,
-        radius: 13,
-        rotation: 0,
+        kind: key,
+        emoji: data.emoji,
+        color: data.color,
+        x: this.player.x,
+        y: this.player.y - 10,
+        vy: -9.6,
+        radius: 24,
       });
+      this.nextTypeIndex += 1;
       window.retroAudio?.throw();
     }
 
     spawnTarget() {
-      const types = [
-        { name: 'octopus', color: '#fb7185', points: 12, size: 34 },
-        { name: 'turtle', color: '#5eead4', points: 10, size: 38 },
-        { name: 'hallabong', color: '#fbbf24', points: 8, size: 28 },
-      ];
-      const type = types[Math.floor(Math.random() * types.length)];
-      const y = 110 + Math.random() * (this.canvas.height - 260);
-      const speed = 2.5 + Math.random() * 2.2 + this.wave * 0.06;
+      const key = ORDER[Math.floor(Math.random() * ORDER.length)];
+      const data = TYPES[key];
+      const lane = Math.floor(Math.random() * 5);
+      const x = 120 + lane * 180;
       this.targets.push({
-        ...type,
-        x: this.canvas.width + 50,
-        y,
-        speed,
-        wobble: Math.random() * Math.PI * 2,
+        kind: key,
+        emoji: data.emoji,
+        color: data.color,
+        x,
+        y: -40,
+        vy: 1.6 + Math.random() * 1.4 + Math.min(this.score / 80, 1.8),
+        phase: Math.random() * Math.PI * 2,
       });
     }
 
-    addBurst(x, y, color) {
-      for (let i = 0; i < 10; i += 1) {
+    addBurst(x, y, color, emoji) {
+      for (let i = 0; i < 12; i += 1) {
         this.particles.push({
           x,
           y,
           vx: (Math.random() - 0.5) * 5,
           vy: (Math.random() - 0.5) * 5,
-          life: 28 + Math.random() * 16,
+          life: 24 + Math.random() * 18,
           color,
+          emoji: i < 3 ? emoji : '',
         });
       }
     }
 
-    hitTest(p, t) {
-      const dx = p.x - t.x;
-      const dy = p.y - t.y;
-      const dist = Math.hypot(dx, dy);
-      return dist < p.radius + t.size * 0.55;
+    hitTest(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return Math.hypot(dx, dy) < 42;
+    }
+
+    scoreHit(target, matched) {
+      if (matched) {
+        this.combo += 1;
+        const base = TYPES[target.kind].points;
+        const gain = base + Math.min(this.combo * 2, 20);
+        this.score += gain;
+        this.timeLeft = Math.min(60, this.timeLeft + 1);
+        window.retroAudio?.hit();
+      } else {
+        this.combo = 0;
+        this.timeLeft = Math.max(0, this.timeLeft - 2);
+        window.retroAudio?.miss();
+      }
+      this.best = Math.max(this.best, this.score);
+      localStorage.setItem('natpro10-best-score', String(this.best));
+      this.updateHud();
     }
 
     update(delta) {
       this.timerAcc += delta;
       this.spawnAcc += delta;
-      this.wave += delta * 0.001;
 
       if (this.timerAcc >= 1000) {
         this.timerAcc -= 1000;
@@ -107,25 +145,38 @@
         }
       }
 
-      const spawnEvery = Math.max(450, 1000 - this.wave * 40);
+      const smoothing = Math.min(delta / 16, 2);
+      this.player.x += (this.pointerX - this.player.x) * 0.18 * smoothing;
+
+      const spawnEvery = Math.max(440, 920 - Math.min(this.score * 2, 360));
       if (this.spawnAcc >= spawnEvery) {
         this.spawnAcc = 0;
         this.spawnTarget();
       }
 
       this.projectiles.forEach((p) => {
-        p.x += p.vx;
         p.y += p.vy;
-        p.vy += 0.24;
-        p.rotation += 0.2;
       });
-      this.projectiles = this.projectiles.filter((p) => p.x < this.canvas.width + 40 && p.y < this.canvas.height + 40);
+      this.projectiles = this.projectiles.filter((p) => p.y > -60);
 
       this.targets.forEach((t) => {
-        t.x -= t.speed;
-        t.y += Math.sin((performance.now() * 0.003) + t.wobble) * 0.6;
+        t.y += t.vy;
+        t.x += Math.sin(performance.now() * 0.002 + t.phase) * 0.45;
       });
-      this.targets = this.targets.filter((t) => t.x > -60);
+
+      const escaped = [];
+      this.targets = this.targets.filter((t) => {
+        if (t.y > this.canvas.height + 50) {
+          escaped.push(t);
+          return false;
+        }
+        return true;
+      });
+      if (escaped.length) {
+        this.combo = 0;
+        this.timeLeft = Math.max(0, this.timeLeft - escaped.length);
+        this.updateHud();
+      }
 
       this.particles.forEach((p) => {
         p.x += p.vx;
@@ -139,17 +190,18 @@
           const projectile = this.projectiles[i];
           const target = this.targets[j];
           if (this.hitTest(projectile, target)) {
-            this.score += target.points;
-            this.best = Math.max(this.best, this.score);
-            localStorage.setItem('natpro10-best-score', String(this.best));
-            this.addBurst(target.x, target.y, target.color);
+            const matched = projectile.kind === target.kind;
+            this.scoreHit(target, matched);
+            this.addBurst(target.x, target.y, matched ? TYPES[target.kind].color : '#ffffff', target.emoji);
             this.projectiles.splice(i, 1);
             this.targets.splice(j, 1);
-            this.updateHud();
-            window.retroAudio?.hit();
             break;
           }
         }
+      }
+
+      if (this.timeLeft <= 0) {
+        this.endGame();
       }
     }
 
@@ -166,14 +218,14 @@
 
       ctx.fillStyle = '#254d7d';
       ctx.beginPath();
-      ctx.moveTo(0, 250);
-      ctx.lineTo(120, 210);
-      ctx.lineTo(220, 255);
-      ctx.lineTo(350, 190);
-      ctx.lineTo(470, 240);
-      ctx.lineTo(600, 175);
-      ctx.lineTo(760, 245);
-      ctx.lineTo(width, 190);
+      ctx.moveTo(0, 245);
+      ctx.lineTo(120, 205);
+      ctx.lineTo(220, 252);
+      ctx.lineTo(350, 188);
+      ctx.lineTo(470, 238);
+      ctx.lineTo(600, 171);
+      ctx.lineTo(760, 244);
+      ctx.lineTo(width, 184);
       ctx.lineTo(width, 0);
       ctx.lineTo(0, 0);
       ctx.closePath();
@@ -193,6 +245,15 @@
 
       ctx.fillStyle = '#3a2a1c';
       ctx.fillRect(0, height - 70, width, 70);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      for (let i = 0; i < 12; i += 1) {
+        const x = (i * 97 + performance.now() * 0.02) % width;
+        const y = 290 + (i % 5) * 42;
+        ctx.beginPath();
+        ctx.arc(x, y, 2 + (i % 3), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     drawPlayer() {
@@ -209,19 +270,12 @@
       ctx.fillRect(6, -20, 4, 6);
       ctx.fillRect(-2, -8, 4, 10);
       ctx.restore();
-    }
 
-    drawProjectile(p) {
-      const ctx = this.ctx;
+      const next = TYPES[this.currentType()];
       ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rotation);
-      ctx.fillStyle = '#d6b38b';
-      ctx.beginPath();
-      ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#8b6b4a';
-      ctx.fillRect(-4, -2, 8, 4);
+      ctx.font = '30px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(next.emoji, p.x, p.y - 52);
       ctx.restore();
     }
 
@@ -229,54 +283,85 @@
       const ctx = this.ctx;
       ctx.save();
       ctx.translate(t.x, t.y);
-      if (t.name === 'octopus') {
-        ctx.fillStyle = t.color;
-        ctx.beginPath();
-        ctx.arc(0, 0, t.size * 0.45, Math.PI, Math.PI * 2);
-        ctx.fill();
-        for (let i = -3; i <= 3; i += 1) {
-          ctx.strokeStyle = t.color;
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          ctx.moveTo(i * 6, 2);
-          ctx.quadraticCurveTo(i * 7, 18, i * 4, 30);
-          ctx.stroke();
-        }
-      } else if (t.name === 'turtle') {
-        ctx.fillStyle = t.color;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, t.size * 0.55, t.size * 0.4, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillRect(-10, -6, 20, 12);
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(t.size * 0.45, -5, 10, 10);
-      } else {
-        ctx.fillStyle = t.color;
-        ctx.beginPath();
-        ctx.arc(0, 0, t.size * 0.45, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#22c55e';
-        ctx.fillRect(-3, -t.size * 0.58, 6, 10);
-      }
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+      ctx.beginPath();
+      ctx.roundRect(-28, -28, 56, 56, 16);
+      ctx.fill();
+      ctx.strokeStyle = t.color;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.font = '34px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(t.emoji, 0, 4);
+      ctx.restore();
+    }
+
+    drawProjectile(p) {
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.font = '30px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(p.emoji, 0, 0);
       ctx.restore();
     }
 
     drawParticles() {
       const ctx = this.ctx;
       this.particles.forEach((p) => {
+        ctx.save();
         ctx.globalAlpha = Math.max(0, p.life / 40);
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, 4, 4);
+        if (p.emoji) {
+          ctx.font = '20px Arial';
+          ctx.fillText(p.emoji, p.x, p.y);
+        } else {
+          ctx.fillStyle = p.color;
+          ctx.fillRect(p.x, p.y, 4, 4);
+        }
+        ctx.restore();
       });
-      ctx.globalAlpha = 1;
+    }
+
+    drawLaneHints() {
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      for (let i = 0; i < 5; i += 1) {
+        const x = 120 + i * 180;
+        ctx.beginPath();
+        ctx.moveTo(x, 80);
+        ctx.lineTo(x, this.canvas.height - 120);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    drawHudInside() {
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.fillStyle = 'rgba(2, 8, 23, 0.52)';
+      ctx.fillRect(18, 18, 200, 54);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 18px Arial';
+      ctx.fillText(`콤보 ${this.combo}`, 30, 38);
+      ctx.font = '14px Arial';
+      ctx.fillStyle = '#b9c7d9';
+      ctx.fillText('같은 아이콘을 맞혀 시간을 늘리세요', 30, 60);
+      ctx.restore();
     }
 
     draw() {
+      const ctx = this.ctx;
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.drawBackground();
+      this.drawLaneHints();
       this.drawPlayer();
       this.targets.forEach((t) => this.drawTarget(t));
       this.projectiles.forEach((p) => this.drawProjectile(p));
       this.drawParticles();
+      this.drawHudInside();
     }
 
     loop(timestamp) {
@@ -286,15 +371,16 @@
       this.lastTime = timestamp;
       this.update(delta);
       this.draw();
-      if (this.running) requestAnimationFrame(this.loop);
+      if (this.running) {
+        requestAnimationFrame(this.loop);
+      }
     }
 
     endGame() {
       this.running = false;
-      localStorage.setItem('natpro10-best-score', String(this.best));
       window.retroAudio?.end();
       if (this.onGameOver) {
-        this.onGameOver({ score: this.score, best: this.best });
+        this.onGameOver({ score: this.score });
       }
     }
   }
