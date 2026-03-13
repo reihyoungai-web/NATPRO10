@@ -1,65 +1,65 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <title>ASNP NATPRO10 in JEJU Island</title>
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>ASNP NATPRO10 in JEJU island</title>
+  <meta name="description" content="Jeju-themed web game playable on desktop and mobile." />
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-    <!-- 초기화면 (타이틀 스크린) -->
-    <div id="title-screen" class="screen active">
-        <canvas id="title-canvas"></canvas>
-        <div class="title-content">
-            <h1 class="game-title">ASNP NATPRO10<br><span>in JEJU island</span></h1>
-            <p class="touch-text blink">touch to throw</p>
+  <main class="app-shell">
+    <section class="game-card">
+      <header class="hud">
+        <div>
+          <p class="eyebrow">8-bit Retro Jeju Game</p>
+          <h1>ASNP NATPRO10 in JEJU island</h1>
         </div>
-        <div class="sound-toggle" id="sound-toggle">🔊</div>
-    </div>
-
-    <!-- 이메일 입력 화면 -->
-    <div id="email-screen" class="screen">
-        <div class="email-container">
-            <h2 class="pixel-title">Enter Your Email</h2>
-            <p class="pixel-subtitle">게임 결과를 저장하기 위해<br>이메일을 입력해주세요</p>
-            <input type="email" id="email-input" class="pixel-input" placeholder="your@email.com" autocomplete="email">
-            <button id="start-game-btn" class="pixel-button">START GAME</button>
-            <p class="error-message" id="email-error"></p>
+        <div class="hud-stats">
+          <div class="stat"><span>점수</span><strong id="score">0</strong></div>
+          <div class="stat"><span>남은 시간</span><strong id="timer">45</strong></div>
+          <div class="stat"><span>최고 점수</span><strong id="bestScore">0</strong></div>
         </div>
-    </div>
+      </header>
 
-    <!-- 게임 화면 -->
-    <div id="game-screen" class="screen">
-        <canvas id="game-canvas"></canvas>
-        <div class="game-ui">
-            <div class="score-display">
-                <span class="score-label">SCORE</span>
-                <span class="score-value" id="score">0</span>
+      <section class="stage-wrap">
+        <canvas id="gameCanvas" width="960" height="540" aria-label="Game canvas"></canvas>
+
+        <div id="startOverlay" class="overlay show">
+          <div class="overlay-panel">
+            <p class="overlay-badge">JEJU RETRO STAGE</p>
+            <h2>ASNP NATPRO10 in JEJU island</h2>
+            <p class="overlay-copy">
+              제주 바다를 배경으로 돌하르방을 던져 해양 생물을 맞히세요.<br />
+              모바일에서는 화면을 터치하고, PC에서는 클릭 또는 스페이스바를 사용하세요.
+            </p>
+            <p id="blinkText" class="blink">TOUCH TO THROW</p>
+            <button id="startBtn" class="primary-btn">게임 시작</button>
+          </div>
+        </div>
+
+        <div id="gameOverOverlay" class="overlay">
+          <div class="overlay-panel">
+            <p class="overlay-badge">GAME OVER</p>
+            <h2>수고하셨습니다</h2>
+            <p class="overlay-copy">최종 점수: <strong id="finalScore">0</strong></p>
+            <div class="button-row">
+              <button id="restartBtn" class="primary-btn">다시 시작</button>
+              <button id="muteBtn" class="secondary-btn">사운드 끄기</button>
             </div>
+          </div>
         </div>
-    </div>
+      </section>
 
-    <!-- 게임 오버 / 랭킹 화면 -->
-    <div id="ranking-screen" class="screen">
-        <div class="ranking-container">
-            <h2 class="pixel-title">GAME OVER</h2>
-            <div class="final-score">
-                <span>YOUR SCORE</span>
-                <span id="final-score-value">0</span>
-            </div>
-            <div class="ranking-board">
-                <h3>🏆 TOP 10 RANKING 🏆</h3>
-                <div id="ranking-list"></div>
-            </div>
-            <button id="restart-btn" class="pixel-button">PLAY AGAIN</button>
-        </div>
-    </div>
+      <footer class="game-footer">
+        <p>조작: 터치 / 클릭 / 스페이스바</p>
+        <p><a href="admin.html">관리자 페이지</a> · GitHub Pages 배포 가능</p>
+      </footer>
+    </section>
+  </main>
 
-    <script src="js/audio.js"></script>
-    <script src="js/game.js"></script>
-    <script src="js/main.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>
