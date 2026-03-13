@@ -1,70 +1,43 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>ASNP NATPRO10 in JEJU island</title>
-  <meta name="description" content="Retro Jeju web game with octopus, dolphin, and hallabong icons." />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-  <main class="app-shell">
-    <section class="game-card">
-      <header class="hud">
-        <div>
-          <p class="eyebrow">8-bit Retro Jeju Game</p>
-          <h1>ASNP NATPRO10 in JEJU island</h1>
-        </div>
-        <div class="hud-stats">
-          <div class="stat"><span>점수</span><strong id="score">0</strong></div>
-          <div class="stat"><span>남은 시간</span><strong id="timer">60</strong></div>
-          <div class="stat"><span>최고 점수</span><strong id="bestScore">0</strong></div>
-        </div>
-      </header>
+  <div class="game-shell">
+    <div class="hud top">
+      <div class="title">ASNP NATPRO10 in JEJU island</div>
+      <div class="scoreboard">
+        <span>점수 <strong id="score">0</strong></span>
+        <span>최고점수 <strong id="bestScore">0</strong></span>
+      </div>
+    </div>
 
-      <section class="stage-wrap">
-        <canvas id="gameCanvas" width="960" height="540" aria-label="Game canvas"></canvas>
+    <canvas id="gameCanvas" width="960" height="540" aria-label="Jeju jump game"></canvas>
 
-        <div id="startOverlay" class="overlay show">
-          <div class="overlay-panel">
-            <p class="overlay-badge">JEJU RETRO STAGE</p>
-            <h2>ASNP NATPRO10 in JEJU island</h2>
-            <p class="overlay-copy">
-              Avant Arte 스타일의 원버튼 스코어 어택 느낌으로 재구성했습니다.<br />
-              클릭 / 터치 / 스페이스바로 아이콘을 발사하고, 같은 아이콘을 맞혀 점수를 얻으세요.
-            </p>
-            <div class="legend-row">
-              <span>🐙 문어</span>
-              <span>🐬 돌고래</span>
-              <span>🍊 한라봉</span>
-            </div>
-            <p id="blinkText" class="blink">TOUCH TO THROW</p>
-            <button id="startBtn" class="primary-btn">게임 시작</button>
-          </div>
-        </div>
+    <div class="overlay" id="startOverlay">
+      <div class="panel">
+        <h1>돌하르방 점프 게임</h1>
+        <p>터치/클릭 = 돌하르방이 위로 점프</p>
+        <p>한라봉 🍊 수집 = +10점</p>
+        <p>문어 🐙 / 거북이 🐢 에 닿으면 = 게임 오버!</p>
+        <button id="startBtn">게임 시작</button>
+        <div class="hint">화면 터치 · 마우스 클릭 · 스페이스바 지원</div>
+      </div>
+    </div>
 
-        <div id="gameOverOverlay" class="overlay">
-          <div class="overlay-panel">
-            <p class="overlay-badge">GAME OVER</p>
-            <h2>수고하셨습니다</h2>
-            <p class="overlay-copy">최종 점수: <strong id="finalScore">0</strong></p>
-            <div class="button-row">
-              <button id="restartBtn" class="primary-btn">다시 시작</button>
-              <button id="muteBtn" class="secondary-btn">사운드 끄기</button>
-            </div>
-          </div>
-        </div>
-      </section>
+    <div class="overlay hidden" id="gameOverOverlay">
+      <div class="panel">
+        <h2>게임 오버</h2>
+        <p>최종 점수: <strong id="finalScore">0</strong></p>
+        <button id="restartBtn">다시 시작</button>
+      </div>
+    </div>
+  </div>
 
-      <footer class="game-footer">
-        <p>조작: 터치 / 클릭 / 스페이스바 · 같은 아이콘을 맞히면 고득점</p>
-        <p><a href="admin.html">관리자 페이지</a> · GitHub Pages 배포 가능</p>
-      </footer>
-    </section>
-  </main>
-
-  <script src="js/audio.js"></script>
   <script src="js/game.js"></script>
-  <script src="js/main.js"></script>
 </body>
 </html>
