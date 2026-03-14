@@ -112,9 +112,12 @@
 <script>
 /* ══ AUDIO ══ */
 const sfx=(()=>{
-    let ctx=null,muted=false;
+    let ctx=null, muted=false;
+    let bgmNodes=[], bgmPlaying=false, bgmLoop=null;
+
     const init=()=>{if(ctx)return;try{ctx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}};
     const resume=()=>{if(ctx?.state==='suspended')ctx.resume();};
+
     const tone=(freq,type,dur,vol=.1,delay=0)=>{
         if(!ctx||muted)return;
         const o=ctx.createOscillator(),g=ctx.createGain();
@@ -123,13 +126,66 @@ const sfx=(()=>{
         g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);
         o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+dur);
     };
+
+    // ── 8비트 BGM: 제주 느낌의 밝고 경쾌한 멜로디 루프 ──
+    const MELODY=[
+        {f:392,d:220},{f:440,d:220},{f:494,d:220},{f:523,d:440},
+        {f:494,d:220},{f:440,d:220},{f:392,d:440},{f:330,d:220},
+        {f:392,d:220},{f:440,d:440},{f:392,d:220},{f:330,d:220},
+        {f:294,d:440},{f:330,d:220},{f:392,d:220},{f:440,d:440},
+    ];
+    const BASS=[
+        {f:196,d:440},{f:220,d:440},{f:247,d:440},{f:262,d:440},
+        {f:247,d:440},{f:220,d:440},{f:196,d:440},{f:165,d:440},
+    ];
+
+    function _playNote(freq,type,dur,vol,when){
+        if(!ctx||muted)return;
+        const o=ctx.createOscillator(),g=ctx.createGain();
+        o.type=type;o.frequency.value=freq;
+        g.gain.setValueAtTime(vol,when);
+        g.gain.exponentialRampToValueAtTime(0.001,when+dur/1000*0.9);
+        o.connect(g);g.connect(ctx.destination);
+        o.start(when);o.stop(when+dur/1000);
+        bgmNodes.push(o);
+    }
+
+    function _scheduleBGM(){
+        if(!ctx||muted||!bgmPlaying)return;
+        let t=ctx.currentTime+0.05;
+        // 멜로디
+        MELODY.forEach(n=>{_playNote(n.f,'square',n.d,.07,t);t+=n.d/1000;});
+        // 베이스 (멜로디와 동시 — 별도 타임라인)
+        let tb=ctx.currentTime+0.05;
+        BASS.forEach(n=>{_playNote(n.f,'triangle',n.d,.055,tb);tb+=n.d/1000;});
+        // 멜로디 총 길이 계산해서 루프
+        const totalMs=MELODY.reduce((s,n)=>s+n.d,0);
+        bgmLoop=setTimeout(_scheduleBGM, totalMs-100);
+    }
+
+    function startBGM(){
+        if(bgmPlaying||muted)return;
+        bgmPlaying=true;
+        _scheduleBGM();
+    }
+    function stopBGM(){
+        bgmPlaying=false;
+        clearTimeout(bgmLoop);
+        bgmNodes.forEach(o=>{try{o.stop();}catch(e){}});
+        bgmNodes=[];
+    }
+
     return{
-        init,resume,
+        init,resume,startBGM,stopBGM,
         jump(){tone(420,'triangle',.09,.1);},
         collect(){tone(587,'square',.05,.12);tone(784,'square',.05,.1,.06);tone(988,'square',.1,.1,.12);},
         land(){tone(200,'triangle',.06,.06);},
         die(){[392,330,262,196].forEach((f,i)=>tone(f,'sawtooth',.25,.18,i*.15));},
-        toggleMute(){muted=!muted;return muted;}
+        toggleMute(){
+            muted=!muted;
+            if(muted) stopBGM();
+            return muted;
+        }
     };
 })();
 
@@ -329,7 +385,7 @@ class PlatformGame{
 
     reset(){
         this.score=0;this.dead=false;this.bgT=0;
-        this.scroll=2.6;this.scrollMax=5.0;
+        this.scroll=3.1;this.scrollMax=6.0;  // ✅ 기존 2.6/5.0 × 1.2배
         this.dist=0;
 
         this.player={
@@ -378,7 +434,7 @@ class PlatformGame{
     _nextPlat(px,py,diff){
         // ✅ gap: 현재 스크롤 속도 기준 한 번 점프로 반드시 건널 수 있는 범위
         //    safeGapMax = 체공프레임 × 현재속도 × 0.50 (50% 여유)
-        const curSpeed = Math.min(this.scrollMax, 2.6 + this.score * 0.018);
+        const curSpeed = Math.min(this.scrollMax, 3.1 + this.score * 0.018);
         const safeMax = this._airFrames * curSpeed * 0.48; // 항상 건널 수 있는 최대
         const gMin = Math.max(30, this.W * 0.05);
         const gMax = Math.min(safeMax, this.W * 0.13 + diff * this.W * 0.006);
@@ -541,7 +597,7 @@ class PlatformGame{
         this.particles=this.particles.filter(pt=>{pt.life-=dt;pt.x+=pt.vx;pt.y+=pt.vy;pt.vy+=.12;return pt.life>0;});
 
         // 속도 증가: 매우 완만하게 (score 100당 +0.5 수준)
-        this.scroll=Math.min(this.scrollMax, 2.6+this.score*.018);
+        this.scroll=Math.min(this.scrollMax, 3.1+this.score*.018);
 
         // 구름 레이어별 속도로 이동 (시차 효과)
         this.clouds.forEach(c=>{
@@ -1039,7 +1095,13 @@ class App{
         const tc=e=>{if(e.target.id==='snd-btn')return;e.preventDefault();this._toEmail();};
         this.screens.title.addEventListener('click',tc);
         this.screens.title.addEventListener('touchstart',tc,{passive:false});
-        document.getElementById('snd-btn').addEventListener('click',e=>{e.stopPropagation();sfx.init();document.getElementById('snd-btn').textContent=sfx.toggleMute()?'🔇':'🔊';});
+        document.getElementById('snd-btn').addEventListener('click',e=>{
+            e.stopPropagation();sfx.init();
+            const muted=sfx.toggleMute();
+            document.getElementById('snd-btn').textContent=muted?'🔇':'🔊';
+            // 음소거 해제 시 게임 중이면 BGM 재시작
+            if(!muted && this.game && !this.game.dead) sfx.startBGM();
+        });
         document.getElementById('start-btn').addEventListener('click',()=>this._submit());
         document.getElementById('email-input').addEventListener('keypress',e=>{if(e.key==='Enter')this._submit();});
         document.getElementById('restart-btn').addEventListener('click',()=>this._show('email'));
@@ -1060,7 +1122,11 @@ class App{
             if(this.game)this.game.stop();
             this.game=new PlatformGame(document.getElementById('game-canvas'));
             this.game.onGameOver=score=>this._gameOver(score);
-            this._countdown(()=>this.game.start());
+            sfx.stopBGM();
+            this._countdown(()=>{
+                this.game.start();
+                sfx.startBGM();
+            });
         }));
     }
     _countdown(cb){
@@ -1069,7 +1135,10 @@ class App{
         const tick=()=>{num.style.animation='none';void num.offsetWidth;num.style.animation='cPop .7s ease-out forwards';n--;if(n>0){num.textContent=n;setTimeout(tick,700);}else{ov.style.display='none';cb();}};
         setTimeout(tick,700);
     }
-    _gameOver(score){saveScore(this.email,score);document.getElementById('final-score').textContent=score;this._renderRanking(score);this._show('ranking');}
+    _gameOver(score){
+        sfx.stopBGM();
+        saveScore(this.email,score);document.getElementById('final-score').textContent=score;this._renderRanking(score);this._show('ranking');
+    }
     _renderRanking(cur){
         const top=topScores(),list=document.getElementById('rank-list');list.innerHTML='';
         if(!top.length){list.innerHTML='<p style="color:#555;font-size:9px;text-align:center;padding:14px">아직 기록이 없습니다</p>';return;}
