@@ -402,6 +402,7 @@ class PlatformGame{
         this.enemies=[];
         this.particles=[];
         this.dolphins=this._initDolphins();
+        this.rays=this._initRays();
         // 구름 3레이어 — 높이·속도·크기 다르게
         this.clouds=[
             // 원경 구름 (작고 느림)
@@ -467,26 +468,31 @@ class PlatformGame{
         this.cv.addEventListener('touchstart',this._tapH,{passive:false});
         document.addEventListener('keydown',this._keyH);
 
-        // ✅ Fixed Timestep 게임루프
-        // 물리는 항상 고정 16.667ms(60fps) 단위로 실행
-        // 렌더는 매 rAF 프레임마다 실행
-        // → 30Hz/60Hz/120Hz/144Hz 어디서든 완전히 동일한 게임 속도
-        const FIXED_DT = 16.667;
+        // ── Fixed Timestep 게임 루프 ──
+        // FIXED_DT: 물리 1스텝 = 16ms (62.5스텝/초, 60fps 기준과 동일)
+        // rAF 'now' 파라미터 미사용 → performance.now() 직접 호출
+        // (브라우저별 rAF timestamp 구현 차이 완전 제거)
+        const FIXED_DT = 16;          // 정수 ms — 부동소수점 누적 오차 최소화
+        const MAX_STEPS = 5;          // 프레임당 최대 물리 스텝 (저사양 PC 폭주 방지)
         let accumulator = 0;
-        let last = performance.now();
+        let lastTime = performance.now();
 
-        const tick = (now) => {
-            // 실제 경과 시간 (최대 100ms 캡 — 탭 전환 등 대비)
-            const frameTime = Math.min(now - last, 100);
-            last = now;
-            accumulator += frameTime;
+        const tick = () => {
+            const now = performance.now();           // rAF 파라미터 무시, 직접 측정
+            const elapsed = Math.min(now - lastTime, 200); // 최대 200ms 캡
+            lastTime = now;
+            accumulator += elapsed;
 
-            // 누적된 시간을 FIXED_DT 단위로 소진하며 물리 실행
-            while(accumulator >= FIXED_DT){
+            // 최대 MAX_STEPS 스텝만 실행 — 저사양 PC에서도 렌더 끊기지 않게
+            let steps = 0;
+            while(accumulator >= FIXED_DT && steps < MAX_STEPS){
                 this._update(FIXED_DT);
                 accumulator -= FIXED_DT;
+                steps++;
                 if(this.dead) break;
             }
+            // 저사양 PC에서 스텝 한도 초과시 누적 버림 (게임 느려지는 것 방지)
+            if(accumulator > FIXED_DT * MAX_STEPS) accumulator = 0;
 
             this._draw();
             this._raf = requestAnimationFrame(tick);
@@ -519,116 +525,253 @@ class PlatformGame{
         }));
     }
 
-    _update(dt){
-        // Fixed Timestep: dt는 항상 16.667ms로 고정
-        // → 모든 물리값이 프레임레이트와 완전히 무관
+    // ─── 가오리 초기화 ───
+    _initRays(){
+        // 가오리 3마리 — 수면 아래 유영하다가 수면 가까이 올라오며 날개짓
+        return [...Array(3)].map((_,i)=>({
+            x: this.W*(0.15 + i*0.35),   // 초기 x 분산
+            y: this.baseY + 18,            // 수면 바로 아래
+            dir: i%2===0 ? 1 : -1,         // 이동 방향
+            speed: 0.55 + Math.random()*0.4,
+            size: 0.9 + Math.random()*0.5,
+            wingT: Math.random()*Math.PI*2, // 날개짓 위상
+            floatT: Math.random()*Math.PI*2,// 부유 위상
+            alpha: 0.0,                     // 초기 투명 (수면 아래)
+            rising: false,
+            timer: i*2500 + Math.random()*3000
+        }));
+    }
+
+    _updateRays(dt){
+        this.rays.forEach(r=>{
+            r.timer += dt;
+            // 일정 시간마다 수면 가까이 올라옴
+            if(!r.rising && r.timer > 5000 + Math.random()*6000){
+                r.rising = true;
+                r.timer = 0;
+                r.x = this.W*(0.05 + Math.random()*0.9);
+            }
+            if(r.rising){
+                r.alpha = Math.min(r.alpha + 0.015, 0.82);
+                r.y = this.baseY + 10 + Math.sin(r.floatT)*8;
+            } else {
+                r.alpha = Math.max(r.alpha - 0.008, 0);
+                r.y = this.baseY + 22;
+            }
+            if(r.rising && r.timer > 4000){ r.rising = false; }
+
+            // 수평 이동 (반전)
+            r.x += r.dir * r.speed;
+            if(r.x < -80) { r.x = this.W + 60; }
+            if(r.x > this.W + 80) { r.x = -60; }
+
+            // 날개짓 + 부유
+            r.wingT += 0.04;
+            r.floatT += 0.018;
+        });
+    }
+
+    _drawRays(cx){
+        this.rays.forEach(r=>{
+            if(r.alpha < 0.02) return;
+            const sc = r.size;
+            const wing = Math.sin(r.wingT) * 12; // 날개 상하 진폭
+
+            cx.save();
+            cx.globalAlpha = r.alpha;
+            cx.translate(r.x, r.y);
+            cx.scale(r.dir, 1); // 방향에 따라 좌우 반전
+
+            // ── 몸통 (납작한 마름모) ──
+            const bG = cx.createRadialGradient(0,0,2,0,0,38*sc);
+            bG.addColorStop(0,'#4a7aaa');
+            bG.addColorStop(0.5,'#2a5580');
+            bG.addColorStop(1,'#1a3860');
+            cx.fillStyle = bG;
+            cx.beginPath();
+            cx.moveTo(0, -12*sc);          // 앞 (머리)
+            cx.bezierCurveTo(8*sc,-8*sc,  18*sc,-2*sc,  20*sc, 0);
+            cx.bezierCurveTo(18*sc, 2*sc,  8*sc, 8*sc,  0, 10*sc);  // 뒤
+            cx.bezierCurveTo(-8*sc, 8*sc,-18*sc, 2*sc,-20*sc, 0);
+            cx.bezierCurveTo(-18*sc,-2*sc,-8*sc,-8*sc,  0,-12*sc);
+            cx.closePath(); cx.fill();
+
+            // ── 왼쪽 날개 ──
+            const wG1 = cx.createLinearGradient(-20*sc,0,-55*sc,wing*sc);
+            wG1.addColorStop(0,'#2a5580'); wG1.addColorStop(1,'#1a3060');
+            cx.fillStyle = wG1;
+            cx.beginPath();
+            cx.moveTo(-18*sc, 0);
+            cx.bezierCurveTo(-32*sc,-4*sc, -50*sc, wing*sc*0.6, -55*sc, wing*sc);
+            cx.bezierCurveTo(-48*sc, wing*sc+6*sc, -30*sc, 6*sc, -18*sc, 4*sc);
+            cx.closePath(); cx.fill();
+
+            // ── 오른쪽 날개 ──
+            const wG2 = cx.createLinearGradient(20*sc,0,55*sc,-wing*sc);
+            wG2.addColorStop(0,'#2a5580'); wG2.addColorStop(1,'#1a3060');
+            cx.fillStyle = wG2;
+            cx.beginPath();
+            cx.moveTo(18*sc, 0);
+            cx.bezierCurveTo(32*sc,-4*sc, 50*sc,-wing*sc*0.6, 55*sc,-wing*sc);
+            cx.bezierCurveTo(48*sc,-wing*sc-6*sc, 30*sc, 6*sc, 18*sc, 4*sc);
+            cx.closePath(); cx.fill();
+
+            // ── 꼬리 (길고 얇은 채찍형) ──
+            cx.strokeStyle = '#1a3060'; cx.lineWidth = 2.5*sc;
+            cx.beginPath();
+            cx.moveTo(0, 10*sc);
+            cx.bezierCurveTo(2*sc, 22*sc, -3*sc, 36*sc, 1*sc, 52*sc);
+            cx.stroke();
+
+            // ── 배 (연한 색) ──
+            cx.fillStyle = 'rgba(100,160,220,0.35)';
+            cx.beginPath();
+            cx.ellipse(0, 2*sc, 12*sc, 7*sc, 0, 0, Math.PI*2);
+            cx.fill();
+
+            // ── 눈 ──
+            cx.fillStyle = '#0a1a2a';
+            cx.beginPath(); cx.arc(-5*sc,-4*sc, 2.5*sc, 0, Math.PI*2); cx.fill();
+            cx.fillStyle = 'rgba(255,255,255,0.6)';
+            cx.beginPath(); cx.arc(-4*sc,-5*sc, 1*sc, 0, Math.PI*2); cx.fill();
+
+            // ── 등 패턴 (흰 점) ──
+            cx.fillStyle = 'rgba(180,220,255,0.3)';
+            [[-4,-6],[4,-4],[-8,0],[6,2]].forEach(([px,py])=>{
+                cx.beginPath(); cx.arc(px*sc, py*sc, 2*sc, 0, Math.PI*2); cx.fill();
+            });
+
+            // ── 수면 굴절 효과 (수면 위 가까이 있을 때) ──
+            if(r.y < this.baseY + 14){
+                cx.fillStyle = 'rgba(135,200,235,0.18)';
+                cx.beginPath();
+                cx.ellipse(0, -8*sc, 40*sc, 6*sc, 0, 0, Math.PI*2);
+                cx.fill();
+            }
+
+            cx.restore();
+        });
+        cx.globalAlpha = 1;
+    }
+        // dt는 항상 FIXED_DT(16ms)로 고정됨
+        // 시간 누적 카운터(애니메이션)에만 dt 사용
+        // 위치/속도 계산은 상수 기반 → 프레임레이트와 완전 무관
 
         if(this.dead){
             this.particles=this.particles.filter(p=>{
-                p.life-=dt; p.x+=p.vx; p.y+=p.vy; p.vy+=.1;
+                p.life-=dt; p.x+=p.vx; p.y+=p.vy; p.vy+=0.15;
                 return p.life>0;
             });
             this._updateDolphins(dt);
+            this._updateRays(dt);
             return;
         }
-        this.bgT+=dt*.001;
-        const diff=this._diff();
 
-        // scroll
-        const tX=this.W*.26;
-        this.player.x-=this.scroll;
-        this.dist+=this.scroll;
-        if(this.player.x<tX){
-            const sh=tX-this.player.x;
-            this.player.x=tX;
-            this.platforms.forEach(p=>p.x-=sh);
-            this.items.forEach(i=>i.x-=sh);
-            this.enemies.forEach(e=>e.x-=sh);
+        this.bgT += 0.016; // 고정값 (dt*.001 = 16*.001 = 0.016)
+        const diff = this._diff();
+
+        // ── 스크롤 ──
+        const tX = this.W * 0.26;
+        this.player.x -= this.scroll;
+        this.dist += this.scroll;
+        if(this.player.x < tX){
+            const sh = tX - this.player.x;
+            this.player.x = tX;
+            this.platforms.forEach(p => p.x -= sh);
+            this.items.forEach(i => i.x -= sh);
+            this.enemies.forEach(e => e.x -= sh);
         }
 
-        // player physics
-        const p=this.player;
-        p.vy=Math.min(p.vy+p.grav, p.maxFall);
-        p.y+=p.vy;
+        // ── 플레이어 물리 ──
+        const p = this.player;
+        p.vy = Math.min(p.vy + p.grav, p.maxFall);
+        p.y  += p.vy;
 
-        // platform collision
-        p.onGround=false;
+        // ── 플랫폼 충돌 ──
+        p.onGround = false;
         for(const pl of this.platforms){
-            if(p.x+this.pW*.8>pl.x && p.x+this.pW*.2<pl.x+pl.w){
-                if(p.y+this.pHt>pl.y && p.y+this.pHt<pl.y+this.pH+Math.abs(p.vy)+6 && p.vy>=0){
-                    p.y=pl.y-this.pHt; p.vy=0; p.onGround=true; p.jc=0;
+            if(p.x + this.pW*0.8 > pl.x && p.x + this.pW*0.2 < pl.x + pl.w){
+                if(p.y + this.pHt > pl.y && p.y + this.pHt < pl.y + this.pH + Math.abs(p.vy) + 6 && p.vy >= 0){
+                    p.y = pl.y - this.pHt;
+                    p.vy = 0; p.onGround = true; p.jc = 0;
                     sfx.land(); break;
                 }
             }
         }
+        if(p.y > this.H + 60){ this._die(); return; }
+        if(p.y < -250){ p.y = -250; p.vy = Math.abs(p.vy) * 0.3; }
 
-        if(p.y>this.H+60){this._die();return;}
-        if(p.y<-250){p.y=-250; p.vy=Math.abs(p.vy)*.3;}
-
-        // cull & spawn platforms
-        this.platforms=this.platforms.filter(pl=>pl.x+pl.w>-80);
-        let rm=this.platforms.length?Math.max(...this.platforms.map(pl=>pl.x+pl.w)):-9999;
-        while(rm<this.W+400){
-            const last=this.platforms[this.platforms.length-1];
-            const np=this._nextPlat(last.x+last.w,last.y,diff);
+        // ── 플랫폼 생성/제거 ──
+        this.platforms = this.platforms.filter(pl => pl.x + pl.w > -80);
+        let rm = this.platforms.length
+            ? Math.max(...this.platforms.map(pl => pl.x + pl.w))
+            : -9999;
+        while(rm < this.W + 400){
+            const last = this.platforms[this.platforms.length - 1];
+            const np = this._nextPlat(last.x + last.w, last.y, diff);
             this.platforms.push(np);
             this._spawnOnPlatform(np);
-            rm=np.x+np.w;
+            rm = np.x + np.w;
         }
 
-        // items
-        this.items=this.items.filter(it=>{
-            if(it.type==='hallabong'){
-                it.bobT+=dt*.003;
-                it.bobY=it.baseY+Math.sin(it.bobT)*5;
-                const dx=it.x-(p.x+this.pW/2), dy=it.bobY-(p.y+this.pHt/2);
-                if(Math.sqrt(dx*dx+dy*dy)<it.r+this.pW*.38){
-                    this.score+=10;
-                    document.getElementById('score').textContent=this.score;
-                    const best=+localStorage.getItem('np10_best')||0;
-                    if(this.score>best){localStorage.setItem('np10_best',this.score);document.getElementById('best').textContent=this.score;}
-                    sfx.collect();
-                    this._popup(it.x,it.bobY-24,'+10','score-pop');
-                    this._burst(it.x,it.bobY,'#FF8C00');
-                    return false;
+        // ── 아이템 (한라봉) ──
+        this.items = this.items.filter(it => {
+            it.bobT += 0.05;  // 고정 증가량 (dt*.003 * 16.667 ≈ 0.05)
+            it.bobY = it.baseY + Math.sin(it.bobT) * 5;
+            const dx = it.x - (p.x + this.pW/2);
+            const dy = it.bobY - (p.y + this.pHt/2);
+            if(Math.sqrt(dx*dx + dy*dy) < it.r + this.pW*0.38){
+                this.score += 10;
+                document.getElementById('score').textContent = this.score;
+                const best = +localStorage.getItem('np10_best') || 0;
+                if(this.score > best){
+                    localStorage.setItem('np10_best', this.score);
+                    document.getElementById('best').textContent = this.score;
                 }
+                sfx.collect();
+                this._popup(it.x, it.bobY - 24, '+10', 'score-pop');
+                this._burst(it.x, it.bobY, '#FF8C00');
+                return false;
             }
-            return it.x>-100;
+            return it.x > -100;
         });
 
-        // enemies
-        this.enemies=this.enemies.filter(en=>{
-            en.fT+=dt;
-            if(en.fT>220){en.fT=0; en.frame=(en.frame+1)%2;}
+        // ── 적 (거북이/문어) ──
+        this.enemies = this.enemies.filter(en => {
+            en.fT += dt;
+            if(en.fT > 220){ en.fT = 0; en.frame = (en.frame + 1) % 2; }
             if(en.patrol){
-                en.x+=en.dir*en.speed;
-                if(en.x<en.bL||en.x>en.bR) en.dir*=-1;
+                en.x += en.dir * en.speed;
+                if(en.x < en.bL || en.x > en.bR) en.dir *= -1;
             } else {
-                en.floatT+=dt*.002;
-                en.y=en.baseY+Math.sin(en.floatT)*en.floatAmp;
+                en.floatT += 0.032; // 고정 증가량 (dt*.002 * 16 = 0.032)
+                en.y = en.baseY + Math.sin(en.floatT) * en.floatAmp;
             }
-            const ex=en.x-en.w/2, ey=en.y, pad=9;
-            if(p.x+this.pW-pad>ex+pad && p.x+pad<ex+en.w-pad && p.y+this.pHt-pad>ey+pad && p.y+pad<ey+en.h-pad){
+            const ex = en.x - en.w/2, ey = en.y, pad = 9;
+            if(p.x + this.pW - pad > ex + pad && p.x + pad < ex + en.w - pad &&
+               p.y + this.pHt - pad > ey + pad && p.y + pad < ey + en.h - pad){
                 this._die(); return false;
             }
-            return en.x>-120;
+            return en.x > -120;
         });
 
-        // particles
-        this.particles=this.particles.filter(pt=>{
-            pt.life-=dt; pt.x+=pt.vx; pt.y+=pt.vy; pt.vy+=.12;
-            return pt.life>0;
+        // ── 파티클 ──
+        this.particles = this.particles.filter(pt => {
+            pt.life -= dt; pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.15;
+            return pt.life > 0;
         });
 
-        this.scroll=Math.min(this.scrollMax, 3.1+this.score*.018);
+        // ── 속도 증가 ──
+        this.scroll = Math.min(this.scrollMax, 3.1 + this.score * 0.018);
 
-        // clouds
-        this.clouds.forEach(c=>{
-            c.x-=c.s*(1-c.layer*0.1);
-            if(c.x+c.w<-20) c.x=this.W+c.w*.5+Math.random()*80;
+        // ── 구름 ──
+        this.clouds.forEach(c => {
+            c.x -= c.s * (1 - c.layer * 0.1);
+            if(c.x + c.w < -20) c.x = this.W + c.w * 0.5 + Math.random() * 80;
         });
 
         this._updateDolphins(dt);
+        this._updateRays(dt);
     }
 
     /* ─── 3. 플랫폼 위/공중에 아이템·적 스폰 (겹치지 않게) ─── */
@@ -771,8 +914,9 @@ class PlatformGame{
         for(let x=0;x<=W;x+=14)cx.lineTo(x,this.baseY+2+Math.sin(x*.022+this.bgT*1.3+1)*5);
         cx.lineTo(W,this.baseY+14);cx.lineTo(0,this.baseY+14);cx.fill();
 
-        // ─── 돌고래 ───
+        // ─── 돌고래 + 가오리 ───
         this._drawDolphins(cx);
+        this._drawRays(cx);
 
         // platforms
         this.platforms.forEach(pl=>this._drawPlatform(cx,pl));
@@ -856,6 +1000,110 @@ class PlatformGame{
         const fgG=cx.createLinearGradient(0,baseY-55,0,baseY);
         fgG.addColorStop(0,'rgba(175,210,228,0)');fgG.addColorStop(1,'rgba(175,210,228,0.2)');
         cx.fillStyle=fgG;cx.fillRect(0,baseY-55,W,56);
+
+        // ── 1. 한라산 중간 타이틀 ──
+        const titleY = peak + (baseY - peak) * 0.52; // 산 중간 높이
+        cx.save();
+        // 타이틀 배경 (반투명 어두운 판)
+        const titleW = Math.min(W * 0.72, 420);
+        cx.fillStyle = 'rgba(0,0,0,0.32)';
+        cx.beginPath();
+        const tx=cx2-titleW/2, ty=titleY-28, tr=6;
+        cx.moveTo(tx+tr,ty); cx.lineTo(tx+titleW-tr,ty);
+        cx.arcTo(tx+titleW,ty,tx+titleW,ty+tr,tr);
+        cx.lineTo(tx+titleW,ty+52-tr);
+        cx.arcTo(tx+titleW,ty+52,tx+titleW-tr,ty+52,tr);
+        cx.lineTo(tx+tr,ty+52);
+        cx.arcTo(tx,ty+52,tx,ty+52-tr,tr);
+        cx.lineTo(tx,ty+tr);
+        cx.arcTo(tx,ty,tx+tr,ty,tr);
+        cx.closePath();
+        cx.fill();
+        // 테두리
+        cx.strokeStyle = 'rgba(255,215,0,0.55)';
+        cx.lineWidth = 1.5;
+        cx.stroke();
+        // 메인 타이틀
+        const fs1 = Math.max(9, Math.min(W * 0.028, 18));
+        cx.font = `900 ${fs1}px "Orbitron", sans-serif`;
+        cx.textAlign = 'center'; cx.textBaseline = 'middle';
+        cx.fillStyle = 'rgba(0,0,0,0.6)';
+        cx.fillText('ASNP NATPRO 10', cx2 + 1, titleY - 8 + 1);
+        cx.fillStyle = '#FFD700';
+        cx.shadowColor = 'rgba(255,215,0,0.7)'; cx.shadowBlur = 8;
+        cx.fillText('ASNP NATPRO 10', cx2, titleY - 8);
+        cx.shadowBlur = 0;
+        // 서브 타이틀
+        const fs2 = Math.max(7, Math.min(W * 0.02, 13));
+        cx.font = `700 ${fs2}px "Orbitron", sans-serif`;
+        cx.fillStyle = 'rgba(0,0,0,0.5)';
+        cx.fillText('in JEJU island  🍊', cx2 + 1, titleY + 14 + 1);
+        cx.fillStyle = '#98FB98';
+        cx.shadowColor = 'rgba(100,220,100,0.5)'; cx.shadowBlur = 5;
+        cx.fillText('in JEJU island  🍊', cx2, titleY + 14);
+        cx.shadowBlur = 0;
+        cx.restore();
+
+        // ── 2. 귤나무 (한라산 하단 좌우) ──
+        const treePositions = [
+            {x: W*0.14, s: 0.85}, {x: W*0.22, s: 1.0},
+            {x: W*0.78, s: 1.0},  {x: W*0.86, s: 0.88},
+            {x: W*0.36, s: 0.75}, {x: W*0.64, s: 0.78},
+        ];
+        treePositions.forEach(t => this._drawCitrusTree(cx, t.x, baseY, t.s));
+    }
+
+    // 귤나무 그리기
+    _drawCitrusTree(cx, x, baseY, scale){
+        cx.save();
+        cx.translate(x, baseY);
+        cx.scale(scale, scale);
+        // 줄기
+        cx.fillStyle = '#5C3317';
+        cx.fillRect(-5, -38, 10, 38);
+        // 잔가지
+        cx.strokeStyle = '#5C3317'; cx.lineWidth = 3;
+        cx.beginPath(); cx.moveTo(0, -28); cx.lineTo(-14, -40); cx.stroke();
+        cx.beginPath(); cx.moveTo(0, -22); cx.lineTo(12, -36); cx.stroke();
+        // 잎 (겹쳐진 원형 덩어리)
+        const leafColors = ['#1a6b1a','#228B22','#2d9e2d','#1f7a1f'];
+        const leafClusters = [
+            {dx:0,  dy:-52, r:24},
+            {dx:-18,dy:-42, r:18},
+            {dx:18, dy:-42, r:18},
+            {dx:-10,dy:-64, r:16},
+            {dx:10, dy:-64, r:16},
+            {dx:0,  dy:-72, r:14},
+        ];
+        leafClusters.forEach((lc, i) => {
+            cx.fillStyle = leafColors[i % leafColors.length];
+            cx.beginPath();
+            cx.arc(lc.dx, lc.dy, lc.r, 0, Math.PI*2);
+            cx.fill();
+        });
+        // 잎 하이라이트
+        cx.fillStyle = 'rgba(100,200,80,0.25)';
+        cx.beginPath(); cx.ellipse(-6, -68, 10, 7, -0.4, 0, Math.PI*2); cx.fill();
+        // 귤 열매 (주황색 작은 원들)
+        const fruits = [
+            {dx:-12,dy:-48},{dx:8,dy:-44},{dx:-4,dy:-56},
+            {dx:14,dy:-58},{dx:-16,dy:-60},{dx:5,dy:-68},
+        ];
+        fruits.forEach(f => {
+            // 귤 몸체
+            cx.fillStyle = '#FF8C00';
+            cx.beginPath(); cx.arc(f.dx, f.dy, 7, 0, Math.PI*2); cx.fill();
+            // 귤 위쪽 돌기
+            cx.fillStyle = '#FF8C00';
+            cx.beginPath(); cx.ellipse(f.dx, f.dy-5, 3, 3, 0, 0, Math.PI*2); cx.fill();
+            // 귤 잎
+            cx.fillStyle = '#228B22';
+            cx.beginPath(); cx.ellipse(f.dx+3, f.dy-8, 5, 3, Math.PI/5, 0, Math.PI*2); cx.fill();
+            // 귤 하이라이트
+            cx.fillStyle = 'rgba(255,255,255,0.4)';
+            cx.beginPath(); cx.ellipse(f.dx-2, f.dy-2, 3, 2, -0.3, 0, Math.PI*2); cx.fill();
+        });
+        cx.restore();
     }
 
     /* ─── 돌고래 그리기 ─── */
