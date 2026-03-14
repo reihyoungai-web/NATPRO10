@@ -366,11 +366,11 @@ class PlatformGame{
 
     // 점프 물리 기준값 사전 계산 — gap 생성 시 활용
     _calcJumpMetrics(){
-        const jpow=16, grav=0.52;
-        this._airFrames=(jpow*2)/grav;           // 체공 프레임 ≈62
-        this._maxJumpDist=this._airFrames*2.6;   // 초기속도 기준 최대 이동 ≈161px
-        // 안전 gap 상한: 최대 이동 거리의 50% → 여유롭게 착지 보장
-        this._safeGapMax=this._maxJumpDist*0.50; // ≈80px
+        // ✅ dt정규화 후 실효 중력 = grav * 1.0 (60fps 기준 s=1)
+        const jpow=16, grav=0.50;
+        this._airFrames=(jpow*2)/grav;           // 체공 프레임 ≈64 (60fps 기준)
+        this._maxJumpDist=this._airFrames*3.1;   // 초기 스크롤속도 기준 최대 이동
+        this._safeGapMax=this._maxJumpDist*0.50;
     }
 
     _resize(){
@@ -501,18 +501,27 @@ class PlatformGame{
     }
 
     _update(dt){
+        // ✅ 프레임레이트 정규화: 60fps(16.67ms) 기준으로 모든 물리값 통일
+        // 60Hz: s≈1.0 / 120Hz: s≈0.5 / 30Hz: s≈2.0 → 항상 동일한 체감 속도
+        const s = Math.min(dt / 16.667, 3.0); // 최대 3배 캡 (탭 전환 후 복귀 등 방지)
+
         if(this.dead){
-            this.particles=this.particles.filter(p=>{p.life-=dt;p.x+=p.vx;p.y+=p.vy;p.vy+=.1;return p.life>0;});
+            this.particles=this.particles.filter(p=>{
+                p.life-=dt;
+                p.x+=p.vx*s; p.y+=p.vy*s; p.vy+=.1*s;
+                return p.life>0;
+            });
             this._updateDolphins(dt);
             return;
         }
         this.bgT+=dt*.001;
         const diff=this._diff();
 
-        // scroll world
-        this.dist+=this.scroll;
-        const tX=this.W*.26;  // ✅ 플레이어 고정 x (reset과 일치)
-        this.player.x-=this.scroll;
+        // ✅ scroll — s 정규화
+        const sd=this.scroll*s;
+        this.dist+=sd;
+        const tX=this.W*.26;
+        this.player.x-=sd;
         if(this.player.x<tX){
             const sh=tX-this.player.x;
             this.player.x=tX;
@@ -521,16 +530,16 @@ class PlatformGame{
             this.enemies.forEach(e=>e.x-=sh);
         }
 
-        // player physics
+        // ✅ player physics — s 정규화
         const p=this.player;
-        p.vy=Math.min(p.vy+p.grav,p.maxFall);
-        p.y+=p.vy;
+        p.vy=Math.min(p.vy+p.grav*s, p.maxFall);
+        p.y+=p.vy*s;
 
         // platform collision
         p.onGround=false;
         for(const pl of this.platforms){
             if(p.x+this.pW*.8>pl.x&&p.x+this.pW*.2<pl.x+pl.w){
-                if(p.y+this.pHt>pl.y&&p.y+this.pHt<pl.y+this.pH+p.vy+5&&p.vy>=0){
+                if(p.y+this.pHt>pl.y&&p.y+this.pHt<pl.y+this.pH+Math.abs(p.vy*s)+6&&p.vy>=0){
                     p.y=pl.y-this.pHt;p.vy=0;p.onGround=true;p.jc=0;
                     sfx.land();break;
                 }
@@ -540,9 +549,8 @@ class PlatformGame{
         if(p.y>this.H+60){this._die();return;}
         if(p.y<-250){p.y=-250;p.vy=Math.abs(p.vy)*.3;}
 
-        // cull old platforms
+        // cull & spawn platforms
         this.platforms=this.platforms.filter(pl=>pl.x+pl.w>-80);
-        // spawn new platforms
         let rm=this.platforms.length?Math.max(...this.platforms.map(pl=>pl.x+pl.w)):-9999;
         while(rm<this.W+400){
             const last=this.platforms[this.platforms.length-1];
@@ -572,19 +580,17 @@ class PlatformGame{
             return it.x>-100;
         });
 
-        // enemies
+        // ✅ enemies — 이동도 s 정규화
         this.enemies=this.enemies.filter(en=>{
             en.fT+=dt;
             if(en.fT>220){en.fT=0;en.frame=(en.frame+1)%2;}
             if(en.patrol){
-                en.x+=en.dir*en.speed;
+                en.x+=en.dir*en.speed*s;
                 if(en.x<en.bL||en.x>en.bR)en.dir*=-1;
             } else {
-                // 공중 부유 적 — 사인파로 움직임
                 en.floatT+=dt*.002;
                 en.y=en.baseY+Math.sin(en.floatT)*en.floatAmp;
             }
-            // collision
             const ex=en.x-en.w/2,ey=en.y;
             const pad=9;
             if(p.x+this.pW-pad>ex+pad&&p.x+pad<ex+en.w-pad&&p.y+this.pHt-pad>ey+pad&&p.y+pad<ey+en.h-pad){
@@ -593,19 +599,21 @@ class PlatformGame{
             return en.x>-120;
         });
 
-        // particles
-        this.particles=this.particles.filter(pt=>{pt.life-=dt;pt.x+=pt.vx;pt.y+=pt.vy;pt.vy+=.12;return pt.life>0;});
+        // ✅ particles — s 정규화
+        this.particles=this.particles.filter(pt=>{
+            pt.life-=dt;
+            pt.x+=pt.vx*s; pt.y+=pt.vy*s; pt.vy+=.12*s;
+            return pt.life>0;
+        });
 
-        // 속도 증가: 매우 완만하게 (score 100당 +0.5 수준)
         this.scroll=Math.min(this.scrollMax, 3.1+this.score*.018);
 
-        // 구름 레이어별 속도로 이동 (시차 효과)
+        // ✅ 구름 — s 정규화
         this.clouds.forEach(c=>{
-            c.x-=c.s*(1-c.layer*0.1); // layer 0 가장 느림
+            c.x-=c.s*(1-c.layer*0.1)*s;
             if(c.x+c.w<-20) c.x=this.W+c.w*.5+Math.random()*80;
         });
 
-        // dolphins
         this._updateDolphins(dt);
     }
 
