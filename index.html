@@ -114,6 +114,7 @@
 const sfx=(()=>{
     let ctx=null, muted=false;
     let bgmNodes=[], bgmPlaying=false, bgmLoop=null;
+    let currentTrack=0; // 0=Daft Punk, 1=TRON
 
     const init=()=>{if(ctx)return;try{ctx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}};
     const resume=()=>{if(ctx?.state==='suspended')ctx.resume();};
@@ -127,46 +128,108 @@ const sfx=(()=>{
         o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+dur);
     };
 
-    // ── 8비트 BGM: 마리오 스타일 경쾌한 멜로디 ──
-    // 마리오 오버월드 테마 근사 (C 장조, 8비트 square wave)
-    const MELODY=[
-        // 첫 번째 악절
-        {f:659,d:150},{f:659,d:300},{f:659,d:300},
-        {f:523,d:150},{f:659,d:300},{f:784,d:600},{f:392,d:600},
-        // 두 번째 악절
-        {f:523,d:450},{f:392,d:450},{f:330,d:450},
-        {f:440,d:300},{f:494,d:300},{f:466,d:150},{f:440,d:300},
-        // 세 번째 악절
-        {f:392,d:200},{f:659,d:200},{f:784,d:200},{f:880,d:300},
-        {f:698,d:150},{f:784,d:300},{f:659,d:300},
-        {f:523,d:150},{f:587,d:150},{f:494,d:300},
-        // 네 번째 악절
-        {f:523,d:450},{f:392,d:450},{f:330,d:450},
-        {f:440,d:300},{f:494,d:300},{f:466,d:150},{f:440,d:300},
-        {f:392,d:200},{f:659,d:200},{f:784,d:200},{f:880,d:300},
-        {f:698,d:150},{f:784,d:300},{f:659,d:300},
-        {f:523,d:150},{f:587,d:150},{f:494,d:300},
+    // ══════════════════════════════════════════
+    // BGM 1: DAFT PUNK 스타일
+    // 반복적인 하우스 리듬 + 펑키 신스 리프
+    // Around The World / Harder Better 느낌
+    // ══════════════════════════════════════════
+    const DAFT_LEAD = [
+        // 메인 신스 리프 (4마디 반복)
+        {f:440,d:125},{f:440,d:125},{f:587,d:125},{f:440,d:125},
+        {f:370,d:125},{f:440,d:125},{f:493,d:125},{f:440,d:125},
+        {f:440,d:125},{f:523,d:125},{f:440,d:125},{f:370,d:125},
+        {f:329,d:125},{f:370,d:125},{f:440,d:250},{f:0,d:125},
+        // 두 번째 리프
+        {f:587,d:125},{f:587,d:125},{f:659,d:125},{f:587,d:125},
+        {f:523,d:125},{f:587,d:125},{f:659,d:125},{f:587,d:125},
+        {f:523,d:125},{f:493,d:125},{f:440,d:125},{f:493,d:125},
+        {f:523,d:250},{f:440,d:125},{f:370,d:125},{f:0,d:125},
+        // 세 번째 리프 (변형)
+        {f:440,d:125},{f:493,d:125},{f:523,d:125},{f:587,d:125},
+        {f:659,d:125},{f:587,d:125},{f:523,d:125},{f:493,d:125},
+        {f:440,d:250},{f:370,d:125},{f:329,d:125},{f:370,d:125},
+        {f:440,d:500},{f:0,d:125},{f:0,d:125},{f:0,d:125},
     ];
-    const BASS=[
-        {f:262,d:300},{f:330,d:300},{f:392,d:300},{f:330,d:300},
-        {f:262,d:300},{f:196,d:300},{f:165,d:300},{f:196,d:300},
-        {f:220,d:300},{f:262,d:300},{f:330,d:300},{f:262,d:300},
-        {f:220,d:300},{f:196,d:300},{f:165,d:300},{f:196,d:300},
+    const DAFT_BASS = [
+        // 4온음 펌핑 베이스 (4 on the floor)
+        {f:110,d:250},{f:110,d:250},{f:130,d:250},{f:110,d:250},
+        {f:110,d:250},{f:110,d:250},{f:130,d:250},{f:147,d:250},
+        {f:110,d:250},{f:110,d:250},{f:130,d:250},{f:110,d:250},
+        {f:110,d:250},{f:110,d:250},{f:147,d:250},{f:130,d:250},
+        {f:110,d:250},{f:110,d:250},{f:130,d:250},{f:110,d:250},
+        {f:110,d:250},{f:110,d:250},{f:130,d:250},{f:147,d:250},
+        {f:110,d:250},{f:130,d:250},{f:147,d:250},{f:110,d:250},
+        {f:130,d:250},{f:110,d:250},{f:130,d:250},{f:110,d:500},
     ];
-    // 타타타 리듬 퍼커션 (pulse wave)
-    const PULSE=[
-        {f:220,d:150},{f:0,d:150},{f:220,d:150},{f:0,d:150},
-        {f:220,d:150},{f:0,d:150},{f:220,d:150},{f:0,d:150},
-        {f:220,d:150},{f:0,d:150},{f:220,d:150},{f:0,d:150},
-        {f:220,d:150},{f:0,d:150},{f:220,d:150},{f:0,d:150},
+    const DAFT_KICK = [
+        // 킥 패턴 (4/4박자 하우스)
+        {f:80,d:100},{f:0,d:150},{f:80,d:80},{f:0,d:170},
+        {f:80,d:100},{f:0,d:150},{f:80,d:80},{f:0,d:170},
+        {f:80,d:100},{f:0,d:150},{f:80,d:80},{f:0,d:170},
+        {f:80,d:100},{f:0,d:150},{f:80,d:80},{f:0,d:170},
+        {f:80,d:100},{f:0,d:150},{f:80,d:80},{f:0,d:170},
+        {f:80,d:100},{f:0,d:150},{f:80,d:80},{f:0,d:170},
+        {f:80,d:100},{f:0,d:150},{f:80,d:80},{f:0,d:170},
+        {f:80,d:100},{f:0,d:150},{f:80,d:80},{f:0,d:170},
     ];
 
+    // ══════════════════════════════════════════
+    // BGM 2: TRON Legacy 스타일 (Daft Punk 작곡)
+    // 어둡고 전자적인 신스 + 느린 아르페지오
+    // Derezzed / The Grid 느낌
+    // ══════════════════════════════════════════
+    const TRON_LEAD = [
+        // 메인 테마 — 어둡고 반복적인 아르페지오
+        {f:220,d:166},{f:277,d:166},{f:330,d:166},
+        {f:277,d:166},{f:220,d:166},{f:185,d:166},
+        {f:220,d:166},{f:277,d:166},{f:370,d:166},
+        {f:330,d:166},{f:277,d:166},{f:220,d:166},
+        // 두 번째 구절
+        {f:185,d:166},{f:220,d:166},{f:277,d:166},
+        {f:220,d:166},{f:185,d:166},{f:164,d:166},
+        {f:185,d:166},{f:220,d:166},{f:277,d:166},
+        {f:330,d:166},{f:277,d:166},{f:220,d:500},
+        // 세 번째 구절 (고음 상승)
+        {f:440,d:200},{f:494,d:200},{f:523,d:200},
+        {f:494,d:200},{f:440,d:200},{f:370,d:200},
+        {f:330,d:200},{f:370,d:200},{f:440,d:200},
+        {f:370,d:200},{f:330,d:200},{f:277,d:600},
+        // 네 번째 구절 (하강)
+        {f:330,d:200},{f:277,d:200},{f:220,d:200},
+        {f:247,d:200},{f:220,d:200},{f:196,d:200},
+        {f:220,d:200},{f:247,d:200},{f:220,d:200},
+        {f:196,d:200},{f:185,d:200},{f:164,d:800},
+    ];
+    const TRON_PAD = [
+        // 신스 패드 (긴 드론음 — 분위기 형성)
+        {f:110,d:500},{f:0,d:0},{f:138,d:500},{f:0,d:0},
+        {f:110,d:500},{f:0,d:0},{f:123,d:500},{f:0,d:0},
+        {f:110,d:500},{f:0,d:0},{f:130,d:500},{f:0,d:0},
+        {f:110,d:500},{f:0,d:0},{f:123,d:1000},{f:0,d:0},
+        {f:92,d:500},{f:0,d:0},{f:110,d:500},{f:0,d:0},
+        {f:92,d:500},{f:0,d:0},{f:103,d:500},{f:0,d:0},
+        {f:92,d:500},{f:0,d:0},{f:110,d:500},{f:0,d:0},
+        {f:92,d:500},{f:0,d:0},{f:110,d:1000},{f:0,d:0},
+    ];
+    const TRON_PULSE = [
+        // 반복적인 전자 펄스 리듬 (16분음표)
+        {f:164,d:125},{f:0,d:125},{f:0,d:125},{f:164,d:125},
+        {f:0,d:125},{f:164,d:125},{f:0,d:125},{f:0,d:125},
+        {f:164,d:125},{f:0,d:125},{f:164,d:125},{f:0,d:125},
+        {f:0,d:125},{f:0,d:125},{f:164,d:125},{f:0,d:125},
+        {f:164,d:125},{f:0,d:125},{f:0,d:125},{f:164,d:125},
+        {f:0,d:125},{f:164,d:125},{f:0,d:125},{f:164,d:125},
+        {f:0,d:125},{f:164,d:125},{f:0,d:125},{f:0,d:125},
+        {f:164,d:125},{f:0,d:125},{f:164,d:250},{f:0,d:125},
+    ];
+
+    // ── 노트 플레이어 ──
     function _playNote(freq,type,dur,vol,when){
-        if(!ctx||muted)return;
+        if(!ctx||muted||freq<=0)return;
         const o=ctx.createOscillator(),g=ctx.createGain();
         o.type=type;o.frequency.value=freq;
         g.gain.setValueAtTime(vol,when);
-        g.gain.exponentialRampToValueAtTime(0.001,when+dur/1000*0.9);
+        g.gain.exponentialRampToValueAtTime(0.001,when+dur/1000*0.88);
         o.connect(g);g.connect(ctx.destination);
         o.start(when);o.stop(when+dur/1000);
         bgmNodes.push(o);
@@ -175,21 +238,34 @@ const sfx=(()=>{
     function _scheduleBGM(){
         if(!ctx||muted||!bgmPlaying)return;
         const base=ctx.currentTime+0.05;
-        // 멜로디 (square)
-        let t=base;
-        MELODY.forEach(n=>{if(n.f>0)_playNote(n.f,'square',n.d,.075,t);t+=n.d/1000;});
-        // 베이스 (triangle)
-        let tb=base;
-        BASS.forEach(n=>{if(n.f>0)_playNote(n.f,'triangle',n.d,.06,tb);tb+=n.d/1000;});
-        // 펄스 리듬 (sawtooth, 낮은 볼륨)
-        let tp=base;
-        PULSE.forEach(n=>{if(n.f>0)_playNote(n.f,'sawtooth',n.d,.028,tp);tp+=n.d/1000;});
-        const totalMs=MELODY.reduce((s,n)=>s+n.d,0);
-        bgmLoop=setTimeout(_scheduleBGM, totalMs-80);
+
+        if(currentTrack===0){
+            // ── Daft Punk 스타일 ──
+            let t=base;
+            DAFT_LEAD.forEach(n=>{_playNote(n.f,'square',n.d,.07,t);t+=n.d/1000;});
+            let tb=base;
+            DAFT_BASS.forEach(n=>{_playNote(n.f,'sawtooth',n.d,.09,tb);tb+=n.d/1000;});
+            let tk=base;
+            DAFT_KICK.forEach(n=>{_playNote(n.f,'square',n.d,.055,tk);tk+=n.d/1000;});
+            const totalMs=DAFT_LEAD.reduce((s,n)=>s+n.d,0);
+            bgmLoop=setTimeout(_scheduleBGM, totalMs-80);
+        } else {
+            // ── TRON 스타일 ──
+            let t=base;
+            TRON_LEAD.forEach(n=>{_playNote(n.f,'sawtooth',n.d,.065,t);t+=n.d/1000;});
+            let tp=base;
+            TRON_PAD.forEach(n=>{_playNote(n.f,'triangle',n.d,.04,tp);tp+=n.d/1000;});
+            let tu=base;
+            TRON_PULSE.forEach(n=>{_playNote(n.f,'square',n.d,.038,tu);tu+=n.d/1000;});
+            const totalMs=TRON_LEAD.reduce((s,n)=>s+n.d,0);
+            bgmLoop=setTimeout(_scheduleBGM, totalMs-80);
+        }
     }
 
     function startBGM(){
         if(bgmPlaying||muted)return;
+        // 게임 시작마다 랜덤으로 트랙 선택
+        currentTrack=Math.random()<0.5?0:1;
         bgmPlaying=true;
         _scheduleBGM();
     }
