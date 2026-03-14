@@ -502,7 +502,6 @@ class PlatformGame{
         this.stars=this._initStars();
         this.lavaBlobs=[];
         this._lavaTimer=0;
-        this._hallTimer=0;  // 주기적 한라봉 보장 타이머
 
         this.player={
             // ✅ 플레이어를 화면 왼쪽 26%로 — 다음 플랫폼 미리 보임
@@ -563,6 +562,8 @@ class PlatformGame{
         for(let i=0;i<12;i++){
             const p=this._nextPlat(lx,ly,0);
             this.platforms.push(p);
+            // 초반 플랫폼에 즉시 한라봉 배치 (스폰 함수 직접 호출)
+            this._spawnOnPlatform(p);
             lx=p.x+p.w; ly=p.y;
         }
     }
@@ -946,18 +947,7 @@ class PlatformGame{
         }
 
         this.bgT += 0.016;
-        this.gameTimeSec += 0.016;
-        // 주기적 한라봉 보장 (2~3초마다 1~2개 공중 스폰)
-        this._hallTimer += 16;
-        if(this._hallTimer > 2200 + Math.random()*1000){
-            this._hallTimer = 0;
-            const count = 1 + Math.floor(Math.random()*2);
-            for(let i=0;i<count;i++){
-                const fx = this.W*0.6 + Math.random()*this.W*0.35;
-                const fy = this.baseY - 60 - Math.random()*this.H*0.25;
-                this.items.push({type:'hallabong',x:fx,baseY:fy,bobY:fy,bobT:Math.random()*Math.PI*2,r:16});
-            }
-        } // 16ms 고정 스텝 → 초 누적
+        this.gameTimeSec += 0.016; // 16ms 고정 스텝 → 초 누적
         const diff = this._diff();
 
         // ── 스크롤 ──
@@ -1108,17 +1098,17 @@ class PlatformGame{
     /* ─── 3. 플랫폼 위/공중에 아이템·적 스폰 ─── */
     _spawnOnPlatform(pl){
         const diff=this._diff();
-        const isEarly=(this.dist<800); // 초반 구간
+        const isEarly=(this.dist<1500); // 초반 구간 (더 오래 유지)
 
         // 한라봉 OR 적 결정
-        // 초반/이후 모두 높은 확률로 한라봉 보장
         const hallabongChance = isEarly ? 0.92 : 0.85;
         const roll=Math.random();
 
         if(roll < hallabongChance){
             // ── 한라봉 ──
-            const airborne=Math.random()<0.45;
-            const count=1+Math.floor(Math.random()*3); // 1~3개
+            const airborne=Math.random()<0.4;
+            // 초반엔 반드시 2개 이상, 이후엔 1~3개
+            const count = isEarly ? 2+Math.floor(Math.random()*2) : 1+Math.floor(Math.random()*3);
             for(let i=0;i<count;i++){
                 const fx=pl.x+pl.w*.2+Math.random()*pl.w*.6;
                 const fy=airborne ? pl.y-50-Math.random()*this.H*.18 : pl.y-32;
