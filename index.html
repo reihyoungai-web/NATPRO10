@@ -308,25 +308,37 @@ class PlatformGame{
         this._resize();
     }
 
+    // 점프 물리 기준값 사전 계산 — gap 생성 시 활용
+    _calcJumpMetrics(){
+        const jpow=16, grav=0.52;
+        this._airFrames=(jpow*2)/grav;           // 체공 프레임 ≈62
+        this._maxJumpDist=this._airFrames*2.6;   // 초기속도 기준 최대 이동 ≈161px
+        // 안전 gap 상한: 최대 이동 거리의 50% → 여유롭게 착지 보장
+        this._safeGapMax=this._maxJumpDist*0.50; // ≈80px
+    }
+
     _resize(){
         this.W=window.innerWidth||document.documentElement.clientWidth;
         this.H=window.innerHeight||document.documentElement.clientHeight;
         this.cv.width=this.W;this.cv.height=this.H;
-        this.baseY=this.H*.76;   // sea surface level
-        this.pH=20;              // platform thickness
-        this.pW=44;this.pHt=58; // player width/height
+        this.baseY=this.H*.76;
+        this.pH=20;
+        this.pW=44;this.pHt=58;
+        this._calcJumpMetrics();
     }
 
     reset(){
         this.score=0;this.dead=false;this.bgT=0;
-        this.scroll=2.6;this.scrollMax=5.2;
+        this.scroll=2.6;this.scrollMax=5.0;
         this.dist=0;
 
         this.player={
-            x:this.W*.18,y:0,
-            vy:0,onGround:true,
-            jpow:-17,grav:.58,maxFall:20,
-            jc:0,maxJ:2
+            // ✅ 플레이어를 화면 왼쪽 26%로 — 다음 플랫폼 미리 보임
+            x:this.W*.26, y:0,
+            vy:0, onGround:true,
+            // ✅ 점프력 강화 + 중력 완화 → 체공시간 증가 → 더 멀리 이동 가능
+            jpow:-16, grav:0.50, maxFall:18,
+            jc:0, maxJ:2
         };
 
         this.platforms=[];
@@ -347,39 +359,48 @@ class PlatformGame{
         this._buildStart();
     }
 
-    /* ─── 1. 초반 플랫폼: 충분히 길게 ─── */
+    /* ─── 1. 초반 플랫폼: 플레이어가 충분히 달릴 수 있는 긴 안전 구간 ─── */
     _buildStart(){
-        // 긴 안전 구간 (화면 너비 * 1.2)
-        const safeW=this.W*1.2;
+        // ✅ 안전 구간: 플레이어 x(26%)보다 충분히 길게 — 화면 너비 * 1.4
+        const safeW=this.W*1.4;
         this.platforms.push({x:0,y:this.baseY,w:safeW});
         this.player.y=this.baseY-this.pH-this.pHt;
 
         let lx=safeW, ly=this.baseY;
-        for(let i=0;i<10;i++){
+        for(let i=0;i<12;i++){
             const p=this._nextPlat(lx,ly,0);
             this.platforms.push(p);
             lx=p.x+p.w; ly=p.y;
         }
     }
 
-    /* ─── 2. 플랫폼 생성: 길게, 랜덤 간격/높이 ─── */
+    /* ─── 2. 플랫폼 생성: 점프 물리 기반으로 안전 범위 보장 ─── */
     _nextPlat(px,py,diff){
-        // gap: 초반은 좁고, 난이도 올라갈수록 넓어짐
-        const gMin=this.W*.07;
-        const gMax=this.W*.16+diff*this.W*.012;
-        const gap=gMin+Math.random()*(gMax-gMin);
+        // ✅ gap: 현재 스크롤 속도 기준 한 번 점프로 반드시 건널 수 있는 범위
+        //    safeGapMax = 체공프레임 × 현재속도 × 0.50 (50% 여유)
+        const curSpeed = Math.min(this.scrollMax, 2.6 + this.score * 0.018);
+        const safeMax = this._airFrames * curSpeed * 0.48; // 항상 건널 수 있는 최대
+        const gMin = Math.max(30, this.W * 0.05);
+        const gMax = Math.min(safeMax, this.W * 0.13 + diff * this.W * 0.006);
+        const gap = gMin + Math.random() * (gMax - gMin);
 
-        // height: 완만하게 변동
-        const dyRange=this.H*.14+diff*this.H*.01;
-        const dy=(Math.random()-.5)*dyRange*2;
-        const ny=Math.max(this.H*.35,Math.min(this.baseY+this.H*.03,py+dy));
+        // ✅ 높이 변동: 점프력으로 확실히 올라갈 수 있는 범위로 제한
+        //    최대 상승 = jpow²/(2*grav) ≈ 256px — 하지만 너무 위면 도달 불가
+        //    안전 상승 한계: 최대 높이의 45%
+        const maxUp   = (16*16)/(2*0.50) * 0.42;  // ≈ 107px 위로
+        const maxDown = this.H * 0.12;              // ≈ 아래로 12%
 
-        // width: 길게 — 최소 화면의 18%, 최대 45%
-        const wMin=this.W*.18;
-        const wMax=this.W*.45;
-        const w=wMin+Math.random()*(wMax-wMin);
+        // 위아래 변동을 분리해서 클램프
+        let dy = (Math.random() - 0.5) * (maxUp + maxDown);
+        dy = Math.max(-maxUp, Math.min(maxDown, dy));  // 위로 maxUp, 아래로 maxDown 제한
+        const ny = Math.max(this.H * 0.38, Math.min(this.baseY + this.H * 0.03, py + dy));
 
-        return{x:px+gap,y:ny,w};
+        // ✅ 너비: 충분히 길게 — 최소 20%, 최대 42%
+        const wMin = this.W * 0.20;
+        const wMax = this.W * 0.42;
+        const w = wMin + Math.random() * (wMax - wMin);
+
+        return{x:px+gap, y:ny, w};
     }
 
     _diff(){return Math.min(10,this.score*.22);}  // 이전 .35 → .22로 완만하게
@@ -434,7 +455,7 @@ class PlatformGame{
 
         // scroll world
         this.dist+=this.scroll;
-        const tX=this.W*.18;
+        const tX=this.W*.26;  // ✅ 플레이어 고정 x (reset과 일치)
         this.player.x-=this.scroll;
         if(this.player.x<tX){
             const sh=tX-this.player.x;
