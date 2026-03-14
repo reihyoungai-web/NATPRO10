@@ -492,6 +492,12 @@ class PlatformGame{
         this.dist=0;
         this.gameTimeSec=0;     // 게임 경과 시간(초)
         this.giantSpawned={t2:false,t5:false,t10:false}; // 거대 한라봉 등장 여부
+        // 점수 기반 이벤트 플래그
+        this.scoreEvents={mola150:false, king200:false, firework300:false, pinkDol500:false};
+        this.fireworks=[];   // 불꽃놀이 파티클
+        this.fireworkActive=false;
+        this._fwTimer=0;
+        this.pinkDolphins=false; // 핑크 돌고래 여부
 
         this.player={
             // ✅ 플레이어를 화면 왼쪽 26%로 — 다음 플랫폼 미리 보임
@@ -920,6 +926,7 @@ class PlatformGame{
             this._updateDolphins(dt);
             this._updateRays(dt);
             this._updateMolas(dt);
+            this._updateFireworks(dt);
             return;
         }
 
@@ -973,21 +980,55 @@ class PlatformGame{
 
         // ── 아이템 (한라봉) ──
         this.items = this.items.filter(it => {
-            it.bobT += 0.05;  // 고정 증가량 (dt*.003 * 16.667 ≈ 0.05)
+            it.bobT += 0.05;
             it.bobY = it.baseY + Math.sin(it.bobT) * 5;
-            const dx = it.x - (p.x + this.pW/2);
-            const dy = it.bobY - (p.y + this.pHt/2);
-            if(Math.sqrt(dx*dx + dy*dy) < it.r + this.pW*0.38){
-                this.score += 10;
-                document.getElementById('score').textContent = this.score;
-                const best = +localStorage.getItem('np10_best') || 0;
-                if(this.score > best){
-                    localStorage.setItem('np10_best', this.score);
-                    document.getElementById('best').textContent = this.score;
+
+            // ── 거대 한라봉 (+10) ──
+            if(it.type === 'giant_hallabong'){
+                it.x += it.speedX;
+                it.bobY = it.baseY + Math.sin(it.bobT) * 8;
+                const dx = it.x-(p.x+this.pW/2), dy = it.bobY-(p.y+this.pHt/2);
+                if(Math.sqrt(dx*dx+dy*dy) < it.r+this.pW*0.5){
+                    this.score+=10;
+                    document.getElementById('score').textContent=this.score;
+                    const best=+localStorage.getItem('np10_best')||0;
+                    if(this.score>best){localStorage.setItem('np10_best',this.score);document.getElementById('best').textContent=this.score;}
+                    sfx.collect();
+                    this._popup(it.x,it.bobY-56,'+10 🍊','score-pop');
+                    this._burst(it.x,it.bobY,'#FF8C00',22);
+                    return false;
                 }
+                return it.x > -120;
+            }
+
+            // ── 대왕 한라봉 (+50) ──
+            if(it.type === 'king_hallabong'){
+                it.x += it.speedX;
+                it.bobY = it.baseY + Math.sin(it.bobT) * 10;
+                const dx = it.x-(p.x+this.pW/2), dy = it.bobY-(p.y+this.pHt/2);
+                if(Math.sqrt(dx*dx+dy*dy) < it.r+this.pW*0.5){
+                    this.score+=50;
+                    document.getElementById('score').textContent=this.score;
+                    const best=+localStorage.getItem('np10_best')||0;
+                    if(this.score>best){localStorage.setItem('np10_best',this.score);document.getElementById('best').textContent=this.score;}
+                    sfx.collect();
+                    this._popup(it.x,it.bobY-80,'+50 👑','score-pop');
+                    this._burst(it.x,it.bobY,'#FFD700',32);
+                    return false;
+                }
+                return it.x > -160;
+            }
+
+            // ── 일반 한라봉 (+10) ──
+            const dx = it.x-(p.x+this.pW/2), dy = it.bobY-(p.y+this.pHt/2);
+            if(Math.sqrt(dx*dx+dy*dy) < it.r+this.pW*0.38){
+                this.score+=10;
+                document.getElementById('score').textContent=this.score;
+                const best=+localStorage.getItem('np10_best')||0;
+                if(this.score>best){localStorage.setItem('np10_best',this.score);document.getElementById('best').textContent=this.score;}
                 sfx.collect();
-                this._popup(it.x, it.bobY - 24, '+10', 'score-pop');
-                this._burst(it.x, it.bobY, '#FF8C00');
+                this._popup(it.x,it.bobY-24,'+10','score-pop');
+                this._burst(it.x,it.bobY,'#FF8C00');
                 return false;
             }
             return it.x > -100;
@@ -1033,6 +1074,8 @@ class PlatformGame{
         this._updateDolphins(dt);
         this._updateRays(dt);
         this._updateMolas(dt);
+        this._checkScoreEvents();
+        this._updateFireworks(dt);
     }
 
     /* ─── 3. 플랫폼 위/공중에 아이템·적 스폰 ─── */
@@ -1087,6 +1130,80 @@ class PlatformGame{
             }
         }
         // 나머지 ~18%는 빈 플랫폼
+    }
+
+    // ── 점수 기반 이벤트 ──
+    _checkScoreEvents(){
+        const s = this.score;
+        const ev = this.scoreEvents;
+
+        // 150점: 몰라몰라 등장 (바다에서 즉시 올라오게)
+        if(!ev.mola150 && s >= 150){
+            ev.mola150 = true;
+            // 대기 중인 첫 번째 mola를 즉시 rising 상태로
+            const m = this.molas.find(m => m.state === 'wait');
+            if(m){ m.state='rising'; m.timer=0; m.x=this.W*(0.2+Math.random()*0.6); m.y=this.H+100; m.alpha=0; m.vy=-0.7; }
+        }
+
+        // 200점: 대왕 한라봉 등장 (50점)
+        if(!ev.king200 && s >= 200){
+            ev.king200 = true;
+            const gY = this.H * 0.25 + Math.random() * this.H * 0.2;
+            this.items.push({
+                type:'king_hallabong',
+                x: this.W + 100, baseY: gY, bobY: gY,
+                bobT: Math.random()*Math.PI*2,
+                r: 72,        // 매우 큼
+                speedX: -1.8,
+                points: 50
+            });
+        }
+
+        // 300점: 불꽃놀이 시작
+        if(!ev.firework300 && s >= 300){
+            ev.firework300 = true;
+            this.fireworkActive = true;
+        }
+
+        // 500점: 돌고래 핑크 변환
+        if(!ev.pinkDol500 && s >= 500){
+            ev.pinkDol500 = true;
+            this.pinkDolphins = true;
+        }
+    }
+
+    _updateFireworks(dt){
+        if(!this.fireworkActive) return;
+        // 불꽃 파티클 주기적 발사
+        if(!this._fwTimer) this._fwTimer = 0;
+        this._fwTimer += dt;
+        if(this._fwTimer > 800){
+            this._fwTimer = 0;
+            // 화면 상단 랜덤 위치에서 폭발
+            const ex = this.W * (0.15 + Math.random() * 0.7);
+            const ey = this.H * (0.05 + Math.random() * 0.25);
+            const hue = Math.floor(Math.random() * 360);
+            for(let i=0;i<28;i++){
+                const a = (i/28)*Math.PI*2;
+                const spd = 2.5 + Math.random()*3.5;
+                this.fireworks.push({
+                    x:ex, y:ey,
+                    vx: Math.cos(a)*spd, vy: Math.sin(a)*spd - 1,
+                    life: 900+Math.random()*600,
+                    maxLife: 900+Math.random()*600,
+                    color: `hsl(${hue+Math.random()*40},100%,${55+Math.random()*20}%)`,
+                    size: 2.5+Math.random()*2.5
+                });
+            }
+        }
+        // 파티클 업데이트
+        this.fireworks = this.fireworks.filter(p=>{
+            p.x += p.vx; p.y += p.vy;
+            p.vy += 0.06; // 중력
+            p.vx *= 0.97; p.vy *= 0.97;
+            p.life -= dt;
+            return p.life > 0;
+        });
     }
 
     // ── 거대 한라봉 체크 및 스폰 ──
@@ -1210,9 +1327,13 @@ class PlatformGame{
         this.platforms.forEach(pl=>this._drawPlatform(cx,pl));
 
         // items
+        // 불꽃놀이 (배경 위, 플랫폼 아래)
+        this._drawFireworks(cx);
+
         this.items.forEach(it=>{
             if(it.type==='hallabong') this._drawHallabong(cx,it.x,it.bobY,it.r);
             else if(it.type==='giant_hallabong') this._drawGiantHallabong(cx,it.x,it.bobY,it.r);
+            else if(it.type==='king_hallabong') this._drawKingHallabong(cx,it.x,it.bobY,it.r);
         });
 
         // enemies
@@ -1437,14 +1558,16 @@ class PlatformGame{
             cx.translate(bx, dy);
             cx.rotate(rot);
             cx.scale(sc, sc);
+            const isPink = this.pinkDolphins;
 
             // ── 꼬리 지느러미 (이분지 꼬리 — 실제 돌고래 특징)
-            cx.fillStyle='#17607a';
+            cx.fillStyle= isPink ? '#c0185a' : '#17607a';
             cx.beginPath();
             cx.moveTo(-32, 0);
             cx.bezierCurveTo(-40,-2,-48,-14,-46,-20);
             cx.bezierCurveTo(-44,-24,-38,-16,-32,-10);
             cx.lineTo(-32,0);cx.fill();
+            cx.fillStyle= isPink ? '#c0185a' : '#17607a';
             cx.beginPath();
             cx.moveTo(-32, 0);
             cx.bezierCurveTo(-40, 2,-48, 14,-46, 20);
@@ -1453,9 +1576,9 @@ class PlatformGame{
 
             // ── 몸통 (유선형 — 앞이 두껍고 뒤가 가늘어짐)
             const bodyG=cx.createLinearGradient(0,-14,0,14);
-            bodyG.addColorStop(0,'#5ac8e0');
-            bodyG.addColorStop(0.4,'#2da8c8');
-            bodyG.addColorStop(1,'#1a7898');
+            bodyG.addColorStop(0, isPink ? '#ff9ecd' : '#5ac8e0');
+            bodyG.addColorStop(0.4, isPink ? '#ff6aaa' : '#2da8c8');
+            bodyG.addColorStop(1, isPink ? '#e0408a' : '#1a7898');
             cx.fillStyle=bodyG;
             cx.beginPath();
             cx.moveTo(30,0);                          // 주둥이 끝
@@ -1466,7 +1589,7 @@ class PlatformGame{
             cx.closePath();cx.fill();
 
             // ── 배 (밝은 흰색)
-            cx.fillStyle='rgba(220,248,255,0.75)';
+            cx.fillStyle= isPink ? 'rgba(255,230,240,0.75)' : 'rgba(220,248,255,0.75)';
             cx.beginPath();
             cx.moveTo(28,0);
             cx.bezierCurveTo(22, 2, 8, 9,  -6, 9);
@@ -1475,7 +1598,7 @@ class PlatformGame{
             cx.fill();
 
             // ── 등지느러미 (S커브 — 실제 돌고래처럼)
-            cx.fillStyle='#17607a';
+            cx.fillStyle= isPink ? '#c0185a' : '#17607a';
             cx.beginPath();
             cx.moveTo(-2,-12);
             cx.bezierCurveTo(2,-12, 8,-30, 4,-32);
@@ -1484,7 +1607,7 @@ class PlatformGame{
             cx.fill();
 
             // ── 가슴지느러미 (측면)
-            cx.fillStyle='#1e88a8';
+            cx.fillStyle= isPink ? '#e0408a' : '#1e88a8';
             cx.beginPath();
             cx.moveTo(8, 6);
             cx.bezierCurveTo(4,10,-4,20,-8,18);
@@ -1628,6 +1751,9 @@ class PlatformGame{
         const sg=cx.createRadialGradient(26,18,2,26,18,22);
         sg.addColorStop(0,'#66BB6A');sg.addColorStop(.6,'#4CAF50');sg.addColorStop(1,'#2E7D32');
         cx.fillStyle=sg;cx.beginPath();cx.ellipse(26,18,24,17,0,0,Math.PI*2);cx.fill();
+        // ── 붉은 외곽선 ──
+        cx.strokeStyle='#E53935';cx.lineWidth=3;
+        cx.beginPath();cx.ellipse(26,18,24,17,0,0,Math.PI*2);cx.stroke();
         cx.fillStyle='#388E3C';cx.beginPath();cx.arc(26,18,11,0,Math.PI*2);cx.fill();
         cx.fillStyle='#2E7D32';
         for(let i=0;i<6;i++){const a=i/6*Math.PI*2;cx.beginPath();cx.arc(26+Math.cos(a)*17,18+Math.sin(a)*12,4.5,0,Math.PI*2);cx.fill();}
@@ -1651,6 +1777,89 @@ class PlatformGame{
         cx.fillStyle='rgba(255,100,120,.4)';
         cx.beginPath();cx.ellipse(x+12,y+21,5,3,0,0,Math.PI*2);cx.fill();
         cx.beginPath();cx.ellipse(x+34,y+21,5,3,0,0,Math.PI*2);cx.fill();
+    }
+
+    _drawKingHallabong(cx,x,y,r){
+        cx.save();
+        // 왕관 빛 아우라
+        const aura=cx.createRadialGradient(x,y,r*0.5,x,y,r*3);
+        aura.addColorStop(0,'rgba(255,215,0,0.5)');
+        aura.addColorStop(0.4,'rgba(255,150,0,0.2)');
+        aura.addColorStop(1,'rgba(255,100,0,0)');
+        cx.fillStyle=aura;cx.beginPath();cx.arc(x,y,r*3,0,Math.PI*2);cx.fill();
+
+        // 별 8방향 (크게 반짝)
+        const starT=this.bgT*2.5;
+        for(let i=0;i<8;i++){
+            const a=(i/8)*Math.PI*2+starT;
+            const pulse=0.5+0.5*Math.abs(Math.sin(starT+i));
+            const sd=r*1.8*pulse;
+            cx.fillStyle=`rgba(255,230,0,${0.75*pulse})`;
+            cx.beginPath();
+            cx.moveTo(x+Math.cos(a)*sd, y+Math.sin(a)*sd);
+            cx.lineTo(x+Math.cos(a+0.25)*(sd*0.35), y+Math.sin(a+0.25)*(sd*0.35));
+            cx.lineTo(x+Math.cos(a+0.5)*(sd*0.7), y+Math.sin(a+0.5)*(sd*0.7));
+            cx.lineTo(x+Math.cos(a-0.25)*(sd*0.35), y+Math.sin(a-0.25)*(sd*0.35));
+            cx.closePath();cx.fill();
+        }
+
+        // 몸체
+        const bG=cx.createRadialGradient(x-r*0.3,y-r*0.3,r*0.05,x,y,r*1.1);
+        bG.addColorStop(0,'#FFEE55');bG.addColorStop(0.35,'#FFB300');bG.addColorStop(0.7,'#FF8000');bG.addColorStop(1,'#E05000');
+        cx.fillStyle=bG;cx.beginPath();cx.ellipse(x,y,r,r*0.92,0,0,Math.PI*2);cx.fill();
+        // 돌기
+        cx.fillStyle='#FF9500';cx.beginPath();cx.ellipse(x,y-r*0.68,r*0.4,r*0.36,0,0,Math.PI*2);cx.fill();
+        // 잎
+        cx.fillStyle='#1B8800';cx.beginPath();cx.ellipse(x+5,y-r-8,14,8,Math.PI/5,0,Math.PI*2);cx.fill();
+        cx.beginPath();cx.ellipse(x-5,y-r-7,12,7,-Math.PI/5,0,Math.PI*2);cx.fill();
+        // 하이라이트
+        cx.fillStyle='rgba(255,255,255,0.4)';cx.beginPath();cx.ellipse(x-r*0.28,y-r*0.22,r*0.32,r*0.24,-0.5,0,Math.PI*2);cx.fill();
+        // 윤곽
+        cx.strokeStyle='rgba(160,60,0,0.5)';cx.lineWidth=3.5;cx.beginPath();cx.ellipse(x,y,r,r*0.92,0,0,Math.PI*2);cx.stroke();
+
+        // 왕관
+        const crX=x, crY=y-r-10;
+        cx.fillStyle='#FFD700';
+        cx.strokeStyle='#B8860B';cx.lineWidth=2;
+        cx.beginPath();
+        cx.moveTo(crX-28,crY+10);
+        cx.lineTo(crX-28,crY-8);
+        cx.lineTo(crX-16,crY+2);
+        cx.lineTo(crX,crY-16);
+        cx.lineTo(crX+16,crY+2);
+        cx.lineTo(crX+28,crY-8);
+        cx.lineTo(crX+28,crY+10);
+        cx.closePath();cx.fill();cx.stroke();
+        // 왕관 보석
+        [crX-28,crX,crX+28].forEach(bx=>{
+            cx.fillStyle='#FF1744';cx.beginPath();cx.arc(bx,crY+10,4,0,Math.PI*2);cx.fill();
+        });
+        cx.fillStyle='#AA00FF';cx.beginPath();cx.arc(crX,crY-16,5,0,Math.PI*2);cx.fill();
+
+        // +50 텍스트
+        cx.fillStyle='#FFD700';
+        cx.font=`bold ${Math.round(r*0.45)}px "Press Start 2P",monospace`;
+        cx.textAlign='center';cx.textBaseline='middle';
+        cx.shadowColor='rgba(255,50,0,0.9)';cx.shadowBlur=10;
+        cx.fillText('+50',x,y+r+22);cx.shadowBlur=0;
+        cx.restore();
+    }
+
+    _drawFireworks(cx){
+        if(!this.fireworks||!this.fireworks.length) return;
+        this.fireworks.forEach(p=>{
+            const alpha = Math.max(0, p.life/p.maxLife);
+            cx.save();
+            cx.globalAlpha = alpha;
+            cx.fillStyle = p.color;
+            cx.shadowColor = p.color;
+            cx.shadowBlur = 4;
+            cx.beginPath();
+            cx.arc(p.x, p.y, p.size*(0.5+alpha*0.5), 0, Math.PI*2);
+            cx.fill();
+            cx.restore();
+        });
+        cx.globalAlpha=1;cx.shadowBlur=0;
     }
 
     _drawDol(cx,x,y,w,h,vy){
