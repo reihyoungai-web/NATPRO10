@@ -466,13 +466,32 @@ class PlatformGame{
         this.cv.addEventListener('click',this._tapH);
         this.cv.addEventListener('touchstart',this._tapH,{passive:false});
         document.addEventListener('keydown',this._keyH);
-        let last=performance.now();
-        const tick=now=>{
-            const dt=Math.min(now-last,50);last=now;
-            this._update(dt);this._draw();
-            this._raf=requestAnimationFrame(tick);
+
+        // ✅ Fixed Timestep 게임루프
+        // 물리는 항상 고정 16.667ms(60fps) 단위로 실행
+        // 렌더는 매 rAF 프레임마다 실행
+        // → 30Hz/60Hz/120Hz/144Hz 어디서든 완전히 동일한 게임 속도
+        const FIXED_DT = 16.667;
+        let accumulator = 0;
+        let last = performance.now();
+
+        const tick = (now) => {
+            // 실제 경과 시간 (최대 100ms 캡 — 탭 전환 등 대비)
+            const frameTime = Math.min(now - last, 100);
+            last = now;
+            accumulator += frameTime;
+
+            // 누적된 시간을 FIXED_DT 단위로 소진하며 물리 실행
+            while(accumulator >= FIXED_DT){
+                this._update(FIXED_DT);
+                accumulator -= FIXED_DT;
+                if(this.dead) break;
+            }
+
+            this._draw();
+            this._raf = requestAnimationFrame(tick);
         };
-        this._raf=requestAnimationFrame(tick);
+        this._raf = requestAnimationFrame(tick);
     }
 
     stop(){
@@ -501,14 +520,12 @@ class PlatformGame{
     }
 
     _update(dt){
-        // ✅ 프레임레이트 정규화: 60fps(16.67ms) 기준으로 모든 물리값 통일
-        // 60Hz: s≈1.0 / 120Hz: s≈0.5 / 30Hz: s≈2.0 → 항상 동일한 체감 속도
-        const s = Math.min(dt / 16.667, 3.0); // 최대 3배 캡 (탭 전환 후 복귀 등 방지)
+        // Fixed Timestep: dt는 항상 16.667ms로 고정
+        // → 모든 물리값이 프레임레이트와 완전히 무관
 
         if(this.dead){
             this.particles=this.particles.filter(p=>{
-                p.life-=dt;
-                p.x+=p.vx*s; p.y+=p.vy*s; p.vy+=.1*s;
+                p.life-=dt; p.x+=p.vx; p.y+=p.vy; p.vy+=.1;
                 return p.life>0;
             });
             this._updateDolphins(dt);
@@ -517,11 +534,10 @@ class PlatformGame{
         this.bgT+=dt*.001;
         const diff=this._diff();
 
-        // ✅ scroll — s 정규화
-        const sd=this.scroll*s;
-        this.dist+=sd;
+        // scroll
         const tX=this.W*.26;
-        this.player.x-=sd;
+        this.player.x-=this.scroll;
+        this.dist+=this.scroll;
         if(this.player.x<tX){
             const sh=tX-this.player.x;
             this.player.x=tX;
@@ -530,24 +546,24 @@ class PlatformGame{
             this.enemies.forEach(e=>e.x-=sh);
         }
 
-        // ✅ player physics — s 정규화
+        // player physics
         const p=this.player;
-        p.vy=Math.min(p.vy+p.grav*s, p.maxFall);
-        p.y+=p.vy*s;
+        p.vy=Math.min(p.vy+p.grav, p.maxFall);
+        p.y+=p.vy;
 
         // platform collision
         p.onGround=false;
         for(const pl of this.platforms){
-            if(p.x+this.pW*.8>pl.x&&p.x+this.pW*.2<pl.x+pl.w){
-                if(p.y+this.pHt>pl.y&&p.y+this.pHt<pl.y+this.pH+Math.abs(p.vy*s)+6&&p.vy>=0){
-                    p.y=pl.y-this.pHt;p.vy=0;p.onGround=true;p.jc=0;
-                    sfx.land();break;
+            if(p.x+this.pW*.8>pl.x && p.x+this.pW*.2<pl.x+pl.w){
+                if(p.y+this.pHt>pl.y && p.y+this.pHt<pl.y+this.pH+Math.abs(p.vy)+6 && p.vy>=0){
+                    p.y=pl.y-this.pHt; p.vy=0; p.onGround=true; p.jc=0;
+                    sfx.land(); break;
                 }
             }
         }
 
         if(p.y>this.H+60){this._die();return;}
-        if(p.y<-250){p.y=-250;p.vy=Math.abs(p.vy)*.3;}
+        if(p.y<-250){p.y=-250; p.vy=Math.abs(p.vy)*.3;}
 
         // cull & spawn platforms
         this.platforms=this.platforms.filter(pl=>pl.x+pl.w>-80);
@@ -565,7 +581,7 @@ class PlatformGame{
             if(it.type==='hallabong'){
                 it.bobT+=dt*.003;
                 it.bobY=it.baseY+Math.sin(it.bobT)*5;
-                const dx=it.x-(p.x+this.pW/2),dy=it.bobY-(p.y+this.pHt/2);
+                const dx=it.x-(p.x+this.pW/2), dy=it.bobY-(p.y+this.pHt/2);
                 if(Math.sqrt(dx*dx+dy*dy)<it.r+this.pW*.38){
                     this.score+=10;
                     document.getElementById('score').textContent=this.score;
@@ -580,37 +596,35 @@ class PlatformGame{
             return it.x>-100;
         });
 
-        // ✅ enemies — 이동도 s 정규화
+        // enemies
         this.enemies=this.enemies.filter(en=>{
             en.fT+=dt;
-            if(en.fT>220){en.fT=0;en.frame=(en.frame+1)%2;}
+            if(en.fT>220){en.fT=0; en.frame=(en.frame+1)%2;}
             if(en.patrol){
-                en.x+=en.dir*en.speed*s;
-                if(en.x<en.bL||en.x>en.bR)en.dir*=-1;
+                en.x+=en.dir*en.speed;
+                if(en.x<en.bL||en.x>en.bR) en.dir*=-1;
             } else {
                 en.floatT+=dt*.002;
                 en.y=en.baseY+Math.sin(en.floatT)*en.floatAmp;
             }
-            const ex=en.x-en.w/2,ey=en.y;
-            const pad=9;
-            if(p.x+this.pW-pad>ex+pad&&p.x+pad<ex+en.w-pad&&p.y+this.pHt-pad>ey+pad&&p.y+pad<ey+en.h-pad){
-                this._die();return false;
+            const ex=en.x-en.w/2, ey=en.y, pad=9;
+            if(p.x+this.pW-pad>ex+pad && p.x+pad<ex+en.w-pad && p.y+this.pHt-pad>ey+pad && p.y+pad<ey+en.h-pad){
+                this._die(); return false;
             }
             return en.x>-120;
         });
 
-        // ✅ particles — s 정규화
+        // particles
         this.particles=this.particles.filter(pt=>{
-            pt.life-=dt;
-            pt.x+=pt.vx*s; pt.y+=pt.vy*s; pt.vy+=.12*s;
+            pt.life-=dt; pt.x+=pt.vx; pt.y+=pt.vy; pt.vy+=.12;
             return pt.life>0;
         });
 
         this.scroll=Math.min(this.scrollMax, 3.1+this.score*.018);
 
-        // ✅ 구름 — s 정규화
+        // clouds
         this.clouds.forEach(c=>{
-            c.x-=c.s*(1-c.layer*0.1)*s;
+            c.x-=c.s*(1-c.layer*0.1);
             if(c.x+c.w<-20) c.x=this.W+c.w*.5+Math.random()*80;
         });
 
