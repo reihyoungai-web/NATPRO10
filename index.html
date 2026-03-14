@@ -493,11 +493,16 @@ class PlatformGame{
         this.gameTimeSec=0;     // 게임 경과 시간(초)
         this.giantSpawned={t2:false,t5:false,t10:false}; // 거대 한라봉 등장 여부
         // 점수 기반 이벤트 플래그
-        this.scoreEvents={mola150:false, king200:false, firework300:false, pinkDol500:false};
+        this.scoreEvents={mola150:false, king200:false, firework300:false, pinkDol500:false, sunset800:false, night1000:false, volcano1200:false};
         this.fireworks=[];   // 불꽃놀이 파티클
         this.fireworkActive=false;
         this._fwTimer=0;
-        this.pinkDolphins=false; // 핑크 돌고래 여부
+        this.pinkDolphins=false;
+        // 하늘 변화 관련
+        this.stars=this._initStars();
+        this.lavaBlobs=[];
+        this._lavaTimer=0;
+        this._hallTimer=0;  // 주기적 한라봉 보장 타이머
 
         this.player={
             // ✅ 플레이어를 화면 왼쪽 26%로 — 다음 플랫폼 미리 보임
@@ -535,12 +540,21 @@ class PlatformGame{
         this.platforms.push(startPl);
         this.player.y=this.baseY-this.pH-this.pHt;
 
-        // ✅ 시작 플랫폼 위에 바로 한라봉 3개 배치 (게임 시작 즉시 표출)
-        [0.35, 0.55, 0.75].forEach(frac=>{
+        // 시작 즉시 한라봉 — 플레이어(26%) 바로 앞 구간에 배치
+        [0.32, 0.46, 0.62, 0.78].forEach(frac=>{
             const fx = safeW * frac;
             this.items.push({
                 type:'hallabong',
                 x:fx, baseY:startPl.y-36, bobY:startPl.y-36,
+                bobT:Math.random()*Math.PI*2, r:16
+            });
+        });
+        // 공중 한라봉 추가 (시작 직후 화면)
+        [0.40, 0.60].forEach(frac=>{
+            const fx = safeW * frac;
+            this.items.push({
+                type:'hallabong',
+                x:fx, baseY:startPl.y-90, bobY:startPl.y-90,
                 bobT:Math.random()*Math.PI*2, r:16
             });
         });
@@ -927,11 +941,23 @@ class PlatformGame{
             this._updateRays(dt);
             this._updateMolas(dt);
             this._updateFireworks(dt);
+            this._updateLava(dt);
             return;
         }
 
         this.bgT += 0.016;
-        this.gameTimeSec += 0.016; // 16ms 고정 스텝 → 초 누적
+        this.gameTimeSec += 0.016;
+        // 주기적 한라봉 보장 (2~3초마다 1~2개 공중 스폰)
+        this._hallTimer += 16;
+        if(this._hallTimer > 2200 + Math.random()*1000){
+            this._hallTimer = 0;
+            const count = 1 + Math.floor(Math.random()*2);
+            for(let i=0;i<count;i++){
+                const fx = this.W*0.6 + Math.random()*this.W*0.35;
+                const fy = this.baseY - 60 - Math.random()*this.H*0.25;
+                this.items.push({type:'hallabong',x:fx,baseY:fy,bobY:fy,bobT:Math.random()*Math.PI*2,r:16});
+            }
+        } // 16ms 고정 스텝 → 초 누적
         const diff = this._diff();
 
         // ── 스크롤 ──
@@ -1076,6 +1102,7 @@ class PlatformGame{
         this._updateMolas(dt);
         this._checkScoreEvents();
         this._updateFireworks(dt);
+        this._updateLava(dt);
     }
 
     /* ─── 3. 플랫폼 위/공중에 아이템·적 스폰 ─── */
@@ -1084,14 +1111,13 @@ class PlatformGame{
         const isEarly=(this.dist<800); // 초반 구간
 
         // 한라봉 OR 적 결정
-        // 초반: 한라봉 70%, 빈 플랫폼 30% (적 없음)
-        // 이후: 한라봉 55%, 적 27%, 빈 18%
-        const hallabongChance = isEarly ? 0.88 : 0.78;
+        // 초반/이후 모두 높은 확률로 한라봉 보장
+        const hallabongChance = isEarly ? 0.92 : 0.85;
         const roll=Math.random();
 
         if(roll < hallabongChance){
             // ── 한라봉 ──
-            const airborne=Math.random()<0.4;
+            const airborne=Math.random()<0.45;
             const count=1+Math.floor(Math.random()*3); // 1~3개
             for(let i=0;i<count;i++){
                 const fx=pl.x+pl.w*.2+Math.random()*pl.w*.6;
@@ -1132,6 +1158,105 @@ class PlatformGame{
         // 나머지 ~18%는 빈 플랫폼
     }
 
+    // ── 별 초기화 ──
+    _initStars(){
+        return [...Array(120)].map(()=>({
+            x: Math.random()*2000,
+            y: Math.random()*0.65, // 화면 높이 비율
+            r: 0.8+Math.random()*2.2,
+            alpha: 0.4+Math.random()*0.6,
+            twinkle: Math.random()*Math.PI*2,
+            speed: 0.02+Math.random()*0.04
+        }));
+    }
+
+    _drawStars(cx,W,H){
+        if(!this.stars) return;
+        this.stars.forEach(s=>{
+            s.twinkle += s.speed;
+            s.x -= 0.3; // 천천히 흐름
+            if(s.x < -5) s.x = W+5;
+            const alpha = s.alpha*(0.6+0.4*Math.sin(s.twinkle));
+            cx.fillStyle=`rgba(255,255,220,${alpha})`;
+            cx.beginPath();cx.arc(s.x, H*s.y, s.r, 0, Math.PI*2);cx.fill();
+            // 밝은 별은 십자 광채
+            if(s.r > 2){
+                cx.strokeStyle=`rgba(255,255,200,${alpha*0.5})`;cx.lineWidth=0.8;
+                cx.beginPath();cx.moveTo(s.x-s.r*2.5,s.y*H);cx.lineTo(s.x+s.r*2.5,s.y*H);cx.stroke();
+                cx.beginPath();cx.moveTo(s.x,s.y*H-s.r*2.5);cx.lineTo(s.x,s.y*H+s.r*2.5);cx.stroke();
+            }
+        });
+    }
+
+    _updateLava(dt){
+        if(!this.volcanoActive) return;
+        this._lavaTimer = (this._lavaTimer||0) + dt;
+        // 0.3초마다 용암 파티클 발사
+        if(this._lavaTimer > 300){
+            this._lavaTimer = 0;
+            const peak = this.baseY - 230; // 한라산 정상
+            const cx2  = this.W * 0.5;
+            for(let i=0;i<6;i++){
+                const a = -Math.PI*0.5 + (Math.random()-0.5)*Math.PI*0.8;
+                const spd = 3+Math.random()*5;
+                this.lavaBlobs.push({
+                    x: cx2+(Math.random()-0.5)*20,
+                    y: peak,
+                    vx: Math.cos(a)*spd,
+                    vy: Math.sin(a)*spd - 2,
+                    life: 1200+Math.random()*800,
+                    maxLife: 2000,
+                    r: 4+Math.random()*6,
+                    hue: Math.random()<0.5?15:30 // 붉은/주황
+                });
+            }
+        }
+        this.lavaBlobs = this.lavaBlobs.filter(b=>{
+            b.x+=b.vx; b.y+=b.vy;
+            b.vy+=0.12; b.vx*=0.98;
+            b.life-=dt;
+            return b.life>0 && b.y<this.H+20;
+        });
+    }
+
+    _drawVolcano(cx,W,baseY){
+        // 분화구 위 폭발 이펙트 (화산 재/연기 기둥)
+        const peak = baseY-230, cx2 = W*0.5;
+        // 연기 기둥
+        const smokeAlpha = 0.25+0.1*Math.sin(this.bgT*2);
+        for(let i=0;i<5;i++){
+            const sy = peak - i*22;
+            const sr = 14+i*9;
+            const sa = smokeAlpha*(1-i*0.15);
+            cx.fillStyle=`rgba(60,30,10,${sa})`;
+            cx.beginPath();cx.arc(cx2+(Math.sin(this.bgT*1.5+i)*8),sy,sr,0,Math.PI*2);cx.fill();
+        }
+        // 분화구 붉은 빛
+        const glowG = cx.createRadialGradient(cx2,peak+20,4,cx2,peak+20,60);
+        glowG.addColorStop(0,'rgba(255,100,0,0.7)');
+        glowG.addColorStop(0.4,'rgba(255,50,0,0.3)');
+        glowG.addColorStop(1,'rgba(255,0,0,0)');
+        cx.fillStyle=glowG;cx.beginPath();cx.arc(cx2,peak+20,60,0,Math.PI*2);cx.fill();
+    }
+
+    _drawLavaBlobs(cx){
+        if(!this.lavaBlobs||!this.lavaBlobs.length) return;
+        this.lavaBlobs.forEach(b=>{
+            const t = b.life/b.maxLife;
+            const alpha = Math.min(1, t*2);
+            // 식어가면서 색 변화 (밝은 주황→붉은→어두운 적갈)
+            const r = Math.round(255);
+            const g = Math.round(t>0.5 ? 160*(t-0.5)*2 : 0);
+            cx.fillStyle=`rgba(${r},${g},0,${alpha})`;
+            cx.beginPath();cx.arc(b.x,b.y,b.r*t+1,0,Math.PI*2);cx.fill();
+            // 밝은 코어
+            if(t>0.4){
+                cx.fillStyle=`rgba(255,220,100,${alpha*0.6})`;
+                cx.beginPath();cx.arc(b.x,b.y,b.r*0.4,0,Math.PI*2);cx.fill();
+            }
+        });
+    }
+
     // ── 점수 기반 이벤트 ──
     _checkScoreEvents(){
         const s = this.score;
@@ -1169,6 +1294,15 @@ class PlatformGame{
         if(!ev.pinkDol500 && s >= 500){
             ev.pinkDol500 = true;
             this.pinkDolphins = true;
+        }
+        // 800점: 노을
+        if(!ev.sunset800 && s >= 800) ev.sunset800 = true;
+        // 1000점: 밤하늘
+        if(!ev.night1000 && s >= 1000) ev.night1000 = true;
+        // 1200점: 화산 폭발
+        if(!ev.volcano1200 && s >= 1200){
+            ev.volcano1200 = true;
+            this.volcanoActive = true;
         }
     }
 
@@ -1276,13 +1410,47 @@ class PlatformGame{
     _draw(){
         const cx=this.cx,W=this.W,H=this.H;
 
-        // sky
+        // ── 하늘 (점수에 따라 변화) ──
+        const ev=this.scoreEvents;
         const sg=cx.createLinearGradient(0,0,0,H);
-        sg.addColorStop(0,'#87CEEB');sg.addColorStop(.55,'#4a90c4');sg.addColorStop(1,'#1e5f74');
+        if(ev.night1000){
+            // 1000점↑: 밤하늘
+            sg.addColorStop(0,'#0a0a1a');sg.addColorStop(.5,'#0d1a2e');sg.addColorStop(1,'#0a1520');
+        } else if(ev.sunset800){
+            // 800점↑: 노을
+            const t=Math.min(1,(this.score-800)/200); // 800→1000 구간에서 점진적
+            const r1=Math.round(135+t*55),g1=Math.round(206-t*120),b1=Math.round(235-t*195);
+            sg.addColorStop(0,`rgb(${Math.round(220+t*15)},${Math.round(80-t*60)},${Math.round(20+t*10)})`);
+            sg.addColorStop(.3,`rgb(${Math.round(255)},${Math.round(140-t*80)},${Math.round(40)})`);
+            sg.addColorStop(.65,`rgb(${Math.round(180+t*20)},${Math.round(100-t*60)},${Math.round(60+t*20)})`);
+            sg.addColorStop(1,'#1e3050');
+        } else {
+            // 기본 낮 하늘
+            sg.addColorStop(0,'#87CEEB');sg.addColorStop(.55,'#4a90c4');sg.addColorStop(1,'#1e5f74');
+        }
         cx.fillStyle=sg;cx.fillRect(0,0,W,H);
 
-        // sun
-        cx.fillStyle='#FFD700';cx.beginPath();cx.arc(W*.88,H*.08,36,0,Math.PI*2);cx.fill();
+        // ── 밤하늘 별 ──
+        if(ev.night1000) this._drawStars(cx,W,H);
+
+        // ── 태양 (노을/낮) 또는 달 (밤) ──
+        if(ev.night1000){
+            // 달
+            cx.fillStyle='#fffce0';cx.beginPath();cx.arc(W*.88,H*.09,26,0,Math.PI*2);cx.fill();
+            cx.fillStyle='#e8e0a0';cx.shadowBlur=0;
+            // 달 크레이터
+            [[0.82,-0.04,6],[0.92,0.04,4],[0.85,0.10,3]].forEach(([rx,ry,r])=>{
+                cx.fillStyle='rgba(180,170,120,0.4)';
+                cx.beginPath();cx.arc(W*rx,H*ry,r,0,Math.PI*2);cx.fill();
+            });
+        } else if(ev.sunset800){
+            // 노을 태양 (크고 붉음)
+            cx.fillStyle='#FF4500';cx.beginPath();cx.arc(W*.15,H*.12,42,0,Math.PI*2);cx.fill();
+            cx.fillStyle='rgba(255,100,30,0.3)';cx.beginPath();cx.arc(W*.15,H*.12,62,0,Math.PI*2);cx.fill();
+        } else {
+            // 낮 태양
+            cx.fillStyle='#FFD700';cx.beginPath();cx.arc(W*.88,H*.08,36,0,Math.PI*2);cx.fill();
+        }
 
         // clouds — 3레이어 렌더링
         this.clouds.forEach(c=>{
@@ -1306,6 +1474,8 @@ class PlatformGame{
 
         // ─── 한라산 + 백록담 ───
         this._drawHallashan(cx,W,this.baseY);
+        if(this.scoreEvents.volcano1200) this._drawVolcano(cx,W,this.baseY);
+        this._drawLavaBlobs(cx);
 
         // sea
         cx.fillStyle='#1e5f74';cx.fillRect(0,this.baseY+4,W,H-this.baseY);
