@@ -470,8 +470,8 @@ class PlatformGame{
     // 점프 물리 기준값 사전 계산 — gap 생성 시 활용
     _calcJumpMetrics(){
         // this.player가 아직 없으면(최초 resize 시) H 기반 기본값 사용
-        const _jp = this.player ? Math.abs(this.player.jpow) : this.H * 0.019;
-        const _gv = this.player ? this.player.grav : this.H * 0.00059;
+        const _jp = this.player ? Math.abs(this.player.jpow) : 16;
+        const _gv = this.player ? this.player.grav : 0.50;
         this._airFrames=(_jp*2)/_gv;
         this._maxJumpDist=this._airFrames*3.1;
         this._safeGapMax=this._maxJumpDist*0.50;
@@ -489,8 +489,7 @@ class PlatformGame{
 
     reset(){
         this.score=0;this.dead=false;this.bgT=0;
-        this.scroll    = this.W * 0.0136; // 화면 폭 1.36% — 모바일 기준값
-        this.scrollMax = this.W * 0.0264; // 화면 폭 2.64%
+        this.scroll=5.3;this.scrollMax=10.3;
         this.dist=0;
         this.gameTimeSec=0;     // 게임 경과 시간(초)
         this.giantSpawned={t2:false,t5:false,t10:false}; // 거대 한라봉 등장 여부
@@ -510,9 +509,7 @@ class PlatformGame{
             x:this.W*.26, y:0,
             vy:0, onGround:true,
             // ✅ 점프력 강화 + 중력 완화 → 체공시간 증가 → 더 멀리 이동 가능
-            jpow: -(this.H * 0.019), // 화면 높이 1.9% (390px 기준 -16에 해당)
-            grav: this.H * 0.00059, // 화면 높이 비례 중력
-            maxFall: this.H * 0.021,
+            jpow:-16, grav:0.50, maxFall:18,
             jc:0, maxJ:2
         };
 
@@ -577,7 +574,7 @@ class PlatformGame{
     _nextPlat(px,py,diff){
         // ✅ gap: 현재 스크롤 속도 기준 한 번 점프로 반드시 건널 수 있는 범위
         //    safeGapMax = 체공프레임 × 현재속도 × 0.50 (50% 여유)
-        const curSpeed = Math.min(this.scrollMax, this.W*0.0136 + this.score*(this.W*0.000046));
+        const curSpeed = Math.min(this.scrollMax, 5.3 + this.score * 0.018);
         const safeMax = this._airFrames * curSpeed * 0.48;
         const gMin = this.W * 0.05;                                      // 화면 폭 5%
         const gMax = Math.min(safeMax, this.W * 0.12 + diff * this.W * 0.005, this.W * 0.18); // 최대 18%
@@ -1081,7 +1078,7 @@ class PlatformGame{
         });
 
         // ── 속도 증가 ──
-        this.scroll = Math.min(this.scrollMax, this.W*0.0136 + this.score*(this.W*0.000046));
+        this.scroll = Math.min(this.scrollMax, 5.3 + this.score * 0.018);
 
         // ── 거대 한라봉 등장 체크 (2분/5분/10분) ──
         this._checkGiantHallabong();
