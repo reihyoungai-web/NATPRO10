@@ -469,10 +469,11 @@ class PlatformGame{
 
     // 점프 물리 기준값 사전 계산 — gap 생성 시 활용
     _calcJumpMetrics(){
-        // ✅ dt정규화 후 실효 중력 = grav * 1.0 (60fps 기준 s=1)
-        const _jp=Math.abs(this.player.jpow), _gv=this.player.grav;
-        this._airFrames=(_jp*2)/_gv;   // 체공 프레임 (화면 크기 무관하게 일정)
-        this._maxJumpDist=this._airFrames*3.1;   // 초기 스크롤속도 기준 최대 이동
+        // this.player가 아직 없으면(최초 resize 시) H 기반 기본값 사용
+        const _jp = this.player ? Math.abs(this.player.jpow) : this.H * 0.019;
+        const _gv = this.player ? this.player.grav : this.H * 0.00059;
+        this._airFrames=(_jp*2)/_gv;
+        this._maxJumpDist=this._airFrames*3.1;
         this._safeGapMax=this._maxJumpDist*0.50;
     }
 
@@ -515,6 +516,7 @@ class PlatformGame{
             jc:0, maxJ:2
         };
 
+        this._calcJumpMetrics(); // player 초기화 후 정확한 값으로 재계산
         this.platforms=[];
         this.items=[];
         this.enemies=[];
