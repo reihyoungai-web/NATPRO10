@@ -385,7 +385,7 @@ class PlatformGame{
 
     reset(){
         this.score=0;this.dead=false;this.bgT=0;
-        this.scroll=3.1;this.scrollMax=6.0;  // ✅ 기존 2.6/5.0 × 1.2배
+        this.scroll=3.7;this.scrollMax=7.2;  // ✅ × 1.2배 추가 증가
         this.dist=0;
 
         this.player={
@@ -435,7 +435,7 @@ class PlatformGame{
     _nextPlat(px,py,diff){
         // ✅ gap: 현재 스크롤 속도 기준 한 번 점프로 반드시 건널 수 있는 범위
         //    safeGapMax = 체공프레임 × 현재속도 × 0.50 (50% 여유)
-        const curSpeed = Math.min(this.scrollMax, 3.1 + this.score * 0.018);
+        const curSpeed = Math.min(this.scrollMax, 3.7 + this.score * 0.018);
         const safeMax = this._airFrames * curSpeed * 0.48; // 항상 건널 수 있는 최대
         const gMin = Math.max(30, this.W * 0.05);
         const gMax = Math.min(safeMax, this.W * 0.13 + diff * this.W * 0.006);
@@ -527,132 +527,100 @@ class PlatformGame{
 
     // ─── 가오리 초기화 ───
     _initRays(){
-        // 가오리 3마리 — 수면 아래 유영하다가 수면 가까이 올라오며 날개짓
         return [...Array(3)].map((_,i)=>({
-            x: this.W*(0.15 + i*0.35),   // 초기 x 분산
-            y: this.baseY + 18,            // 수면 바로 아래
-            dir: i%2===0 ? 1 : -1,         // 이동 방향
-            speed: 0.55 + Math.random()*0.4,
-            size: 0.9 + Math.random()*0.5,
-            wingT: Math.random()*Math.PI*2, // 날개짓 위상
-            floatT: Math.random()*Math.PI*2,// 부유 위상
-            alpha: 0.0,                     // 초기 투명 (수면 아래)
+            x: this.W*(0.15+i*0.35),
+            y: this.baseY+18,
+            dir: i%2===0?1:-1,
+            speed: 0.55+Math.random()*0.4,
+            size: 0.9+Math.random()*0.5,
+            wingT: Math.random()*Math.PI*2,
+            floatT: Math.random()*Math.PI*2,
+            alpha: 0.0,
             rising: false,
-            timer: i*2500 + Math.random()*3000
+            timer: i*2500+Math.random()*3000
         }));
     }
 
     _updateRays(dt){
         this.rays.forEach(r=>{
-            r.timer += dt;
-            // 일정 시간마다 수면 가까이 올라옴
-            if(!r.rising && r.timer > 5000 + Math.random()*6000){
-                r.rising = true;
-                r.timer = 0;
-                r.x = this.W*(0.05 + Math.random()*0.9);
+            r.timer+=dt;
+            if(!r.rising && r.timer>5000+Math.random()*6000){
+                r.rising=true; r.timer=0;
+                r.x=this.W*(0.05+Math.random()*0.9);
             }
             if(r.rising){
-                r.alpha = Math.min(r.alpha + 0.015, 0.82);
-                r.y = this.baseY + 10 + Math.sin(r.floatT)*8;
+                r.alpha=Math.min(r.alpha+0.015,0.82);
+                r.y=this.baseY+10+Math.sin(r.floatT)*8;
             } else {
-                r.alpha = Math.max(r.alpha - 0.008, 0);
-                r.y = this.baseY + 22;
+                r.alpha=Math.max(r.alpha-0.008,0);
+                r.y=this.baseY+22;
             }
-            if(r.rising && r.timer > 4000){ r.rising = false; }
-
-            // 수평 이동 (반전)
-            r.x += r.dir * r.speed;
-            if(r.x < -80) { r.x = this.W + 60; }
-            if(r.x > this.W + 80) { r.x = -60; }
-
-            // 날개짓 + 부유
-            r.wingT += 0.04;
-            r.floatT += 0.018;
+            if(r.rising && r.timer>4000) r.rising=false;
+            r.x+=r.dir*r.speed;
+            if(r.x<-80) r.x=this.W+60;
+            if(r.x>this.W+80) r.x=-60;
+            r.wingT+=0.04;
+            r.floatT+=0.018;
         });
     }
 
     _drawRays(cx){
         this.rays.forEach(r=>{
-            if(r.alpha < 0.02) return;
-            const sc = r.size;
-            const wing = Math.sin(r.wingT) * 12; // 날개 상하 진폭
-
+            if(r.alpha<0.02) return;
+            const sc=r.size;
+            const wing=Math.sin(r.wingT)*12;
             cx.save();
-            cx.globalAlpha = r.alpha;
-            cx.translate(r.x, r.y);
-            cx.scale(r.dir, 1); // 방향에 따라 좌우 반전
-
-            // ── 몸통 (납작한 마름모) ──
-            const bG = cx.createRadialGradient(0,0,2,0,0,38*sc);
-            bG.addColorStop(0,'#4a7aaa');
-            bG.addColorStop(0.5,'#2a5580');
-            bG.addColorStop(1,'#1a3860');
-            cx.fillStyle = bG;
+            cx.globalAlpha=r.alpha;
+            cx.translate(r.x,r.y);
+            cx.scale(r.dir,1);
+            // 몸통
+            const bG=cx.createRadialGradient(0,0,2,0,0,38*sc);
+            bG.addColorStop(0,'#4a7aaa');bG.addColorStop(0.5,'#2a5580');bG.addColorStop(1,'#1a3860');
+            cx.fillStyle=bG;
             cx.beginPath();
-            cx.moveTo(0, -12*sc);          // 앞 (머리)
-            cx.bezierCurveTo(8*sc,-8*sc,  18*sc,-2*sc,  20*sc, 0);
-            cx.bezierCurveTo(18*sc, 2*sc,  8*sc, 8*sc,  0, 10*sc);  // 뒤
-            cx.bezierCurveTo(-8*sc, 8*sc,-18*sc, 2*sc,-20*sc, 0);
-            cx.bezierCurveTo(-18*sc,-2*sc,-8*sc,-8*sc,  0,-12*sc);
-            cx.closePath(); cx.fill();
-
-            // ── 왼쪽 날개 ──
-            const wG1 = cx.createLinearGradient(-20*sc,0,-55*sc,wing*sc);
-            wG1.addColorStop(0,'#2a5580'); wG1.addColorStop(1,'#1a3060');
-            cx.fillStyle = wG1;
+            cx.moveTo(0,-12*sc);
+            cx.bezierCurveTo(8*sc,-8*sc,18*sc,-2*sc,20*sc,0);
+            cx.bezierCurveTo(18*sc,2*sc,8*sc,8*sc,0,10*sc);
+            cx.bezierCurveTo(-8*sc,8*sc,-18*sc,2*sc,-20*sc,0);
+            cx.bezierCurveTo(-18*sc,-2*sc,-8*sc,-8*sc,0,-12*sc);
+            cx.closePath();cx.fill();
+            // 왼쪽 날개
+            cx.fillStyle='#1e4a70';
             cx.beginPath();
-            cx.moveTo(-18*sc, 0);
-            cx.bezierCurveTo(-32*sc,-4*sc, -50*sc, wing*sc*0.6, -55*sc, wing*sc);
-            cx.bezierCurveTo(-48*sc, wing*sc+6*sc, -30*sc, 6*sc, -18*sc, 4*sc);
-            cx.closePath(); cx.fill();
-
-            // ── 오른쪽 날개 ──
-            const wG2 = cx.createLinearGradient(20*sc,0,55*sc,-wing*sc);
-            wG2.addColorStop(0,'#2a5580'); wG2.addColorStop(1,'#1a3060');
-            cx.fillStyle = wG2;
+            cx.moveTo(-18*sc,0);
+            cx.bezierCurveTo(-32*sc,-4*sc,-50*sc,wing*sc*0.6,-55*sc,wing*sc);
+            cx.bezierCurveTo(-48*sc,wing*sc+6*sc,-30*sc,6*sc,-18*sc,4*sc);
+            cx.closePath();cx.fill();
+            // 오른쪽 날개
+            cx.fillStyle='#1e4a70';
             cx.beginPath();
-            cx.moveTo(18*sc, 0);
-            cx.bezierCurveTo(32*sc,-4*sc, 50*sc,-wing*sc*0.6, 55*sc,-wing*sc);
-            cx.bezierCurveTo(48*sc,-wing*sc-6*sc, 30*sc, 6*sc, 18*sc, 4*sc);
-            cx.closePath(); cx.fill();
-
-            // ── 꼬리 (길고 얇은 채찍형) ──
-            cx.strokeStyle = '#1a3060'; cx.lineWidth = 2.5*sc;
-            cx.beginPath();
-            cx.moveTo(0, 10*sc);
-            cx.bezierCurveTo(2*sc, 22*sc, -3*sc, 36*sc, 1*sc, 52*sc);
-            cx.stroke();
-
-            // ── 배 (연한 색) ──
-            cx.fillStyle = 'rgba(100,160,220,0.35)';
-            cx.beginPath();
-            cx.ellipse(0, 2*sc, 12*sc, 7*sc, 0, 0, Math.PI*2);
-            cx.fill();
-
-            // ── 눈 ──
-            cx.fillStyle = '#0a1a2a';
-            cx.beginPath(); cx.arc(-5*sc,-4*sc, 2.5*sc, 0, Math.PI*2); cx.fill();
-            cx.fillStyle = 'rgba(255,255,255,0.6)';
-            cx.beginPath(); cx.arc(-4*sc,-5*sc, 1*sc, 0, Math.PI*2); cx.fill();
-
-            // ── 등 패턴 (흰 점) ──
-            cx.fillStyle = 'rgba(180,220,255,0.3)';
+            cx.moveTo(18*sc,0);
+            cx.bezierCurveTo(32*sc,-4*sc,50*sc,-wing*sc*0.6,55*sc,-wing*sc);
+            cx.bezierCurveTo(48*sc,-wing*sc-6*sc,30*sc,6*sc,18*sc,4*sc);
+            cx.closePath();cx.fill();
+            // 꼬리
+            cx.strokeStyle='#1a3060';cx.lineWidth=2.5*sc;
+            cx.beginPath();cx.moveTo(0,10*sc);
+            cx.bezierCurveTo(2*sc,22*sc,-3*sc,36*sc,1*sc,52*sc);cx.stroke();
+            // 배
+            cx.fillStyle='rgba(100,160,220,0.3)';
+            cx.beginPath();cx.ellipse(0,2*sc,12*sc,7*sc,0,0,Math.PI*2);cx.fill();
+            // 눈
+            cx.fillStyle='#0a1a2a';
+            cx.beginPath();cx.arc(-5*sc,-4*sc,2.5*sc,0,Math.PI*2);cx.fill();
+            cx.fillStyle='rgba(255,255,255,0.6)';
+            cx.beginPath();cx.arc(-4*sc,-5*sc,1*sc,0,Math.PI*2);cx.fill();
+            // 등 무늬
+            cx.fillStyle='rgba(180,220,255,0.28)';
             [[-4,-6],[4,-4],[-8,0],[6,2]].forEach(([px,py])=>{
-                cx.beginPath(); cx.arc(px*sc, py*sc, 2*sc, 0, Math.PI*2); cx.fill();
+                cx.beginPath();cx.arc(px*sc,py*sc,2*sc,0,Math.PI*2);cx.fill();
             });
-
-            // ── 수면 굴절 효과 (수면 위 가까이 있을 때) ──
-            if(r.y < this.baseY + 14){
-                cx.fillStyle = 'rgba(135,200,235,0.18)';
-                cx.beginPath();
-                cx.ellipse(0, -8*sc, 40*sc, 6*sc, 0, 0, Math.PI*2);
-                cx.fill();
-            }
-
             cx.restore();
         });
-        cx.globalAlpha = 1;
+        cx.globalAlpha=1;
     }
+
+    _update(dt){
         // dt는 항상 FIXED_DT(16ms)로 고정됨
         // 시간 누적 카운터(애니메이션)에만 dt 사용
         // 위치/속도 계산은 상수 기반 → 프레임레이트와 완전 무관
@@ -762,7 +730,7 @@ class PlatformGame{
         });
 
         // ── 속도 증가 ──
-        this.scroll = Math.min(this.scrollMax, 3.1 + this.score * 0.018);
+        this.scroll = Math.min(this.scrollMax, 3.7 + this.score * 0.018);
 
         // ── 구름 ──
         this.clouds.forEach(c => {
@@ -1001,107 +969,150 @@ class PlatformGame{
         fgG.addColorStop(0,'rgba(175,210,228,0)');fgG.addColorStop(1,'rgba(175,210,228,0.2)');
         cx.fillStyle=fgG;cx.fillRect(0,baseY-55,W,56);
 
-        // ── 1. 한라산 중간 타이틀 ──
-        const titleY = peak + (baseY - peak) * 0.52; // 산 중간 높이
+        // ── 타이틀 (두루마리 종이 디자인) ──
+        const titleY=peak+(baseY-peak)*0.52;
+        const titleW=Math.min(W*0.76,440);
+        const titleH=62;
+        const tx2=cx2-titleW/2, ty2=titleY-titleH/2;
         cx.save();
-        // 타이틀 배경 (반투명 어두운 판)
-        const titleW = Math.min(W * 0.72, 420);
-        cx.fillStyle = 'rgba(0,0,0,0.32)';
-        cx.beginPath();
-        const tx=cx2-titleW/2, ty=titleY-28, tr=6;
-        cx.moveTo(tx+tr,ty); cx.lineTo(tx+titleW-tr,ty);
-        cx.arcTo(tx+titleW,ty,tx+titleW,ty+tr,tr);
-        cx.lineTo(tx+titleW,ty+52-tr);
-        cx.arcTo(tx+titleW,ty+52,tx+titleW-tr,ty+52,tr);
-        cx.lineTo(tx+tr,ty+52);
-        cx.arcTo(tx,ty+52,tx,ty+52-tr,tr);
-        cx.lineTo(tx,ty+tr);
-        cx.arcTo(tx,ty,tx+tr,ty,tr);
-        cx.closePath();
-        cx.fill();
-        // 테두리
-        cx.strokeStyle = 'rgba(255,215,0,0.55)';
-        cx.lineWidth = 1.5;
-        cx.stroke();
-        // 메인 타이틀
-        const fs1 = Math.max(9, Math.min(W * 0.028, 18));
-        cx.font = `900 ${fs1}px "Orbitron", sans-serif`;
-        cx.textAlign = 'center'; cx.textBaseline = 'middle';
-        cx.fillStyle = 'rgba(0,0,0,0.6)';
-        cx.fillText('ASNP NATPRO 10', cx2 + 1, titleY - 8 + 1);
-        cx.fillStyle = '#FFD700';
-        cx.shadowColor = 'rgba(255,215,0,0.7)'; cx.shadowBlur = 8;
-        cx.fillText('ASNP NATPRO 10', cx2, titleY - 8);
-        cx.shadowBlur = 0;
-        // 서브 타이틀
-        const fs2 = Math.max(7, Math.min(W * 0.02, 13));
-        cx.font = `700 ${fs2}px "Orbitron", sans-serif`;
-        cx.fillStyle = 'rgba(0,0,0,0.5)';
-        cx.fillText('in JEJU island  🍊', cx2 + 1, titleY + 14 + 1);
-        cx.fillStyle = '#98FB98';
-        cx.shadowColor = 'rgba(100,220,100,0.5)'; cx.shadowBlur = 5;
-        cx.fillText('in JEJU island  🍊', cx2, titleY + 14);
-        cx.shadowBlur = 0;
+
+        // ── 두루마리 본체 그라디언트 (양피지/한지 느낌) ──
+        const scrollG=cx.createLinearGradient(tx2,ty2,tx2,ty2+titleH);
+        scrollG.addColorStop(0,  'rgba(255,248,220,0.97)'); // 연한 크림
+        scrollG.addColorStop(0.15,'rgba(245,235,195,0.97)'); // 약간 어두운 황색
+        scrollG.addColorStop(0.5, 'rgba(252,244,210,0.97)'); // 밝은 중앙
+        scrollG.addColorStop(0.85,'rgba(240,228,185,0.97)'); // 아래 약간 어둡
+        scrollG.addColorStop(1,  'rgba(230,215,170,0.97)'); // 하단 가장 어둠
+        cx.fillStyle=scrollG;
+        cx.fillRect(tx2,ty2,titleW,titleH);
+
+        // ── 두루마리 결(세로 줄무늬) — 종이 질감 ──
+        cx.strokeStyle='rgba(180,155,100,0.12)';cx.lineWidth=1;
+        for(let lx=tx2+8;lx<tx2+titleW;lx+=14){
+            cx.beginPath();cx.moveTo(lx,ty2);cx.lineTo(lx,ty2+titleH);cx.stroke();
+        }
+
+        // ── 가로 중앙 접힌 선 ──
+        cx.strokeStyle='rgba(160,130,80,0.18)';cx.lineWidth=0.8;
+        cx.beginPath();cx.moveTo(tx2+4,ty2+titleH/2);cx.lineTo(tx2+titleW-4,ty2+titleH/2);cx.stroke();
+
+        // ── 두루마리 양쪽 원통 끝부분 (둥근 말린 부분) ──
+        const rollW=14; // 원통 너비
+        // 왼쪽 원통
+        const lgL=cx.createLinearGradient(tx2,ty2,tx2+rollW,ty2);
+        lgL.addColorStop(0,'rgba(180,140,80,0.95)');
+        lgL.addColorStop(0.4,'rgba(220,185,120,0.95)');
+        lgL.addColorStop(0.7,'rgba(200,160,95,0.95)');
+        lgL.addColorStop(1,'rgba(160,120,65,0.95)');
+        cx.fillStyle=lgL;
+        cx.fillRect(tx2,ty2,rollW,titleH);
+        // 왼쪽 원통 음영선
+        cx.strokeStyle='rgba(120,85,40,0.35)';cx.lineWidth=1;
+        cx.beginPath();cx.moveTo(tx2+rollW,ty2);cx.lineTo(tx2+rollW,ty2+titleH);cx.stroke();
+        // 왼쪽 원통 상단 타원 (말린 단면)
+        cx.fillStyle='rgba(140,105,55,0.9)';
+        cx.beginPath();cx.ellipse(tx2+rollW/2,ty2,rollW/2,5,0,0,Math.PI*2);cx.fill();
+        cx.fillStyle='rgba(220,185,120,0.7)';
+        cx.beginPath();cx.ellipse(tx2+rollW/2,ty2,rollW/2-2,3,0,0,Math.PI*2);cx.fill();
+        // 왼쪽 원통 하단 타원
+        cx.fillStyle='rgba(140,105,55,0.9)';
+        cx.beginPath();cx.ellipse(tx2+rollW/2,ty2+titleH,rollW/2,5,0,0,Math.PI*2);cx.fill();
+        cx.fillStyle='rgba(220,185,120,0.7)';
+        cx.beginPath();cx.ellipse(tx2+rollW/2,ty2+titleH,rollW/2-2,3,0,0,Math.PI*2);cx.fill();
+
+        // 오른쪽 원통
+        const lgR=cx.createLinearGradient(tx2+titleW-rollW,ty2,tx2+titleW,ty2);
+        lgR.addColorStop(0,'rgba(160,120,65,0.95)');
+        lgR.addColorStop(0.3,'rgba(200,160,95,0.95)');
+        lgR.addColorStop(0.6,'rgba(220,185,120,0.95)');
+        lgR.addColorStop(1,'rgba(180,140,80,0.95)');
+        cx.fillStyle=lgR;
+        cx.fillRect(tx2+titleW-rollW,ty2,rollW,titleH);
+        cx.strokeStyle='rgba(120,85,40,0.35)';cx.lineWidth=1;
+        cx.beginPath();cx.moveTo(tx2+titleW-rollW,ty2);cx.lineTo(tx2+titleW-rollW,ty2+titleH);cx.stroke();
+        cx.fillStyle='rgba(140,105,55,0.9)';
+        cx.beginPath();cx.ellipse(tx2+titleW-rollW/2,ty2,rollW/2,5,0,0,Math.PI*2);cx.fill();
+        cx.fillStyle='rgba(220,185,120,0.7)';
+        cx.beginPath();cx.ellipse(tx2+titleW-rollW/2,ty2,rollW/2-2,3,0,0,Math.PI*2);cx.fill();
+        cx.fillStyle='rgba(140,105,55,0.9)';
+        cx.beginPath();cx.ellipse(tx2+titleW-rollW/2,ty2+titleH,rollW/2,5,0,0,Math.PI*2);cx.fill();
+        cx.fillStyle='rgba(220,185,120,0.7)';
+        cx.beginPath();cx.ellipse(tx2+titleW-rollW/2,ty2+titleH,rollW/2-2,3,0,0,Math.PI*2);cx.fill();
+
+        // ── 두루마리 상하단 그림자 (말린 끝 음영) ──
+        const topShad=cx.createLinearGradient(0,ty2,0,ty2+10);
+        topShad.addColorStop(0,'rgba(100,75,35,0.22)');topShad.addColorStop(1,'rgba(100,75,35,0)');
+        cx.fillStyle=topShad;cx.fillRect(tx2+rollW,ty2,titleW-rollW*2,10);
+        const botShad=cx.createLinearGradient(0,ty2+titleH-10,0,ty2+titleH);
+        botShad.addColorStop(0,'rgba(100,75,35,0)');botShad.addColorStop(1,'rgba(100,75,35,0.22)');
+        cx.fillStyle=botShad;cx.fillRect(tx2+rollW,ty2+titleH-10,titleW-rollW*2,10);
+
+        // ── 두루마리 테두리 (붓 획 느낌) ──
+        cx.strokeStyle='rgba(120,85,40,0.55)';cx.lineWidth=1.5;
+        cx.strokeRect(tx2+rollW,ty2,titleW-rollW*2,titleH);
+
+        // ── 메인 타이틀 (붓글씨 느낌 — 짙은 먹색) ──
+        const fs1=Math.max(9,Math.min(W*0.028,18));
+        cx.font=`900 ${fs1}px "Orbitron",sans-serif`;
+        cx.textAlign='center';cx.textBaseline='middle';
+        // 먹물 번진 효과 (그림자)
+        cx.fillStyle='rgba(60,35,10,0.25)';
+        cx.fillText('ASNP NATPRO 10',cx2+1.5,titleY-9+1.5);
+        // 본문 — 짙은 적갈색 (두루마리에 새긴 느낌)
+        cx.fillStyle='#5C2800';
+        cx.shadowColor='rgba(180,100,20,0.4)';cx.shadowBlur=3;
+        cx.fillText('ASNP NATPRO 10',cx2,titleY-9);
+        cx.shadowBlur=0;
+
+        // ── 서브 타이틀 ──
+        const fs2=Math.max(7,Math.min(W*0.02,12));
+        cx.font=`700 ${fs2}px "Orbitron",sans-serif`;
+        cx.fillStyle='rgba(60,35,10,0.2)';
+        cx.fillText('in JEJU island  🍊',cx2+1,titleY+13+1);
+        cx.fillStyle='#7B4A00';
+        cx.shadowColor='rgba(180,100,20,0.3)';cx.shadowBlur=2;
+        cx.fillText('in JEJU island  🍊',cx2,titleY+13);
+        cx.shadowBlur=0;
+
         cx.restore();
 
-        // ── 2. 귤나무 (한라산 하단 좌우) ──
-        const treePositions = [
-            {x: W*0.14, s: 0.85}, {x: W*0.22, s: 1.0},
-            {x: W*0.78, s: 1.0},  {x: W*0.86, s: 0.88},
-            {x: W*0.36, s: 0.75}, {x: W*0.64, s: 0.78},
-        ];
-        treePositions.forEach(t => this._drawCitrusTree(cx, t.x, baseY, t.s));
+        // ── 귤나무 (한라산 하단 좌우) ──
+        [{x:W*0.14,s:0.82},{x:W*0.22,s:0.96},{x:W*0.36,s:0.72},
+         {x:W*0.64,s:0.74},{x:W*0.78,s:0.98},{x:W*0.86,s:0.85}
+        ].forEach(t=>this._drawCitrusTree(cx,t.x,baseY,t.s));
     }
 
     // 귤나무 그리기
-    _drawCitrusTree(cx, x, baseY, scale){
-        cx.save();
-        cx.translate(x, baseY);
-        cx.scale(scale, scale);
+    _drawCitrusTree(cx,x,baseY,scale){
+        cx.save();cx.translate(x,baseY);cx.scale(scale,scale);
         // 줄기
-        cx.fillStyle = '#5C3317';
-        cx.fillRect(-5, -38, 10, 38);
+        cx.fillStyle='#5C3317';cx.fillRect(-5,-38,10,38);
         // 잔가지
-        cx.strokeStyle = '#5C3317'; cx.lineWidth = 3;
-        cx.beginPath(); cx.moveTo(0, -28); cx.lineTo(-14, -40); cx.stroke();
-        cx.beginPath(); cx.moveTo(0, -22); cx.lineTo(12, -36); cx.stroke();
-        // 잎 (겹쳐진 원형 덩어리)
-        const leafColors = ['#1a6b1a','#228B22','#2d9e2d','#1f7a1f'];
-        const leafClusters = [
-            {dx:0,  dy:-52, r:24},
-            {dx:-18,dy:-42, r:18},
-            {dx:18, dy:-42, r:18},
-            {dx:-10,dy:-64, r:16},
-            {dx:10, dy:-64, r:16},
-            {dx:0,  dy:-72, r:14},
-        ];
-        leafClusters.forEach((lc, i) => {
-            cx.fillStyle = leafColors[i % leafColors.length];
-            cx.beginPath();
-            cx.arc(lc.dx, lc.dy, lc.r, 0, Math.PI*2);
-            cx.fill();
+        cx.strokeStyle='#5C3317';cx.lineWidth=3;
+        cx.beginPath();cx.moveTo(0,-28);cx.lineTo(-14,-40);cx.stroke();
+        cx.beginPath();cx.moveTo(0,-22);cx.lineTo(12,-36);cx.stroke();
+        // 잎 덩어리
+        const lc=['#1a6b1a','#228B22','#2d9e2d','#1f7a1f'];
+        [{dx:0,dy:-52,r:24},{dx:-18,dy:-42,r:18},{dx:18,dy:-42,r:18},
+         {dx:-10,dy:-64,r:16},{dx:10,dy:-64,r:16},{dx:0,dy:-72,r:14}
+        ].forEach((l,i)=>{
+            cx.fillStyle=lc[i%4];
+            cx.beginPath();cx.arc(l.dx,l.dy,l.r,0,Math.PI*2);cx.fill();
         });
         // 잎 하이라이트
-        cx.fillStyle = 'rgba(100,200,80,0.25)';
-        cx.beginPath(); cx.ellipse(-6, -68, 10, 7, -0.4, 0, Math.PI*2); cx.fill();
-        // 귤 열매 (주황색 작은 원들)
-        const fruits = [
-            {dx:-12,dy:-48},{dx:8,dy:-44},{dx:-4,dy:-56},
-            {dx:14,dy:-58},{dx:-16,dy:-60},{dx:5,dy:-68},
-        ];
-        fruits.forEach(f => {
-            // 귤 몸체
-            cx.fillStyle = '#FF8C00';
-            cx.beginPath(); cx.arc(f.dx, f.dy, 7, 0, Math.PI*2); cx.fill();
-            // 귤 위쪽 돌기
-            cx.fillStyle = '#FF8C00';
-            cx.beginPath(); cx.ellipse(f.dx, f.dy-5, 3, 3, 0, 0, Math.PI*2); cx.fill();
-            // 귤 잎
-            cx.fillStyle = '#228B22';
-            cx.beginPath(); cx.ellipse(f.dx+3, f.dy-8, 5, 3, Math.PI/5, 0, Math.PI*2); cx.fill();
-            // 귤 하이라이트
-            cx.fillStyle = 'rgba(255,255,255,0.4)';
-            cx.beginPath(); cx.ellipse(f.dx-2, f.dy-2, 3, 2, -0.3, 0, Math.PI*2); cx.fill();
+        cx.fillStyle='rgba(100,200,80,0.22)';
+        cx.beginPath();cx.ellipse(-6,-68,10,7,-0.4,0,Math.PI*2);cx.fill();
+        // 귤 열매
+        [{dx:-12,dy:-48},{dx:8,dy:-44},{dx:-4,dy:-56},
+         {dx:14,dy:-58},{dx:-16,dy:-60},{dx:5,dy:-68}
+        ].forEach(f=>{
+            cx.fillStyle='#FF8C00';
+            cx.beginPath();cx.arc(f.dx,f.dy,7,0,Math.PI*2);cx.fill();
+            cx.beginPath();cx.ellipse(f.dx,f.dy-5,3,3,0,0,Math.PI*2);cx.fill();
+            cx.fillStyle='#228B22';
+            cx.beginPath();cx.ellipse(f.dx+3,f.dy-8,5,3,Math.PI/5,0,Math.PI*2);cx.fill();
+            cx.fillStyle='rgba(255,255,255,0.38)';
+            cx.beginPath();cx.ellipse(f.dx-2,f.dy-2,3,2,-0.3,0,Math.PI*2);cx.fill();
         });
         cx.restore();
     }
