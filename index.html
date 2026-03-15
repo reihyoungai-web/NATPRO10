@@ -106,7 +106,7 @@
         </div>
         <div class="btn-row">
             <button id="restart-btn" class="pix-btn">▶ PLAY AGAIN</button>
-            <button id="dl-btn" class="btn-dl">📥 EXCEL 저장</button>
+            <button id="refresh-btn" class="btn-dl">🔄 순위 새로고침</button>
         </div>
     </div>
 </div>
@@ -2075,19 +2075,64 @@ class PlatformGame{
     }
 }
 
-/* ══ DB ══ */
-const DB='np10_scores';
-function saveScore(email,score){const d=JSON.parse(localStorage.getItem(DB)||'[]');d.push({email,score,date:new Date().toLocaleString('ko-KR')});localStorage.setItem(DB,JSON.stringify(d));}
-function topScores(){const d=JSON.parse(localStorage.getItem(DB)||'[]');const b={};d.forEach(r=>{if(!b[r.email]||r.score>b[r.email].score)b[r.email]=r;});return Object.values(b).sort((a,c)=>c.score-a.score).slice(0,10);}
-function downloadCSV(){
-    const all=JSON.parse(localStorage.getItem(DB)||'[]');
-    if(!all.length){alert('저장된 기록이 없습니다.');return;}
-    const b={};all.forEach(r=>{if(!b[r.email]||r.score>b[r.email].score)b[r.email]=r;});
-    const rows=Object.values(b).sort((a,c)=>c.score-a.score);
-    const csv='\uFEFF순위,이메일,점수,날짜\n'+rows.map((r,i)=>`${i+1},${r.email},${r.score},${r.date}`).join('\n');
-    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-    a.download=`NATPRO10_ranking_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+/* ══ SUPABASE DB ══ */
+const SB_URL = 'https://nzmxypocjksdggabeaqt.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56bXh5cG9jamtzZGdnYWJlYXF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1NDQ4MTUsImV4cCI6MjA4OTEyMDgxNX0.wiUkw5yTSvwkQI2__MqFOLeKEhP3hFf2jkXLFHgcJBM';
+
+// Supabase REST API 헬퍼
+async function sbFetch(path, options={}){
+    const res = await fetch(SB_URL + '/rest/v1' + path, {
+        headers: {
+            'apikey': SB_KEY,
+            'Authorization': 'Bearer ' + SB_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': options.prefer || '',
+        },
+        ...options
+    });
+    return res;
 }
+
+// 점수 저장 (매번 insert)
+async function saveScore(email, score){
+    try {
+        await sbFetch('/scores', {
+            method: 'POST',
+            prefer: 'return=minimal',
+            body: JSON.stringify({ email, score })
+        });
+    } catch(e) {
+        console.warn('Supabase 저장 실패, localStorage 폴백:', e);
+        const d = JSON.parse(localStorage.getItem('np10_scores')||'[]');
+        d.push({email, score});
+        localStorage.setItem('np10_scores', JSON.stringify(d));
+    }
+}
+
+// TOP 10 조회 (이메일당 최고점수 기준)
+async function topScores(){
+    try {
+        const res = await sbFetch('/scores?select=email,score&order=score.desc&limit=200');
+        if(!res.ok) throw new Error(res.status);
+        const rows = await res.json();
+        // 이메일당 최고점수만
+        const best = {};
+        rows.forEach(r => {
+            if(!best[r.email] || r.score > best[r.email]) best[r.email] = r.score;
+        });
+        return Object.entries(best)
+            .map(([email, score]) => ({email, score}))
+            .sort((a,b) => b.score - a.score)
+            .slice(0, 10);
+    } catch(e) {
+        console.warn('Supabase 조회 실패, localStorage 폴백:', e);
+        const d = JSON.parse(localStorage.getItem('np10_scores')||'[]');
+        const b = {};
+        d.forEach(r => { if(!b[r.email]||r.score>b[r.email]) b[r.email]=r.score; });
+        return Object.entries(b).map(([email,score])=>({email,score})).sort((a,c)=>c.score-a.score).slice(0,10);
+    }
+}
+
 function maskEmail(e){const[l,d]=(e||'').split('@');return(l.length<=2?l[0]:l.slice(0,2))+'***@'+(d||'');}
 
 /* ══ APP ══ */
@@ -2113,7 +2158,7 @@ class App{
         document.getElementById('start-btn').addEventListener('click',()=>this._submit());
         document.getElementById('email-input').addEventListener('keypress',e=>{if(e.key==='Enter')this._submit();});
         document.getElementById('restart-btn').addEventListener('click',()=>this._show('email'));
-        document.getElementById('dl-btn').addEventListener('click',downloadCSV);
+        document.getElementById('refresh-btn').addEventListener('click',()=>this._renderRanking(+document.getElementById('final-score').textContent||0));
     }
     _toEmail(){sfx.init();sfx.resume();if(this.bg){this.bg.stop();this.bg=null;}this._show('email');setTimeout(()=>document.getElementById('email-input').focus(),320);}
     _submit(){
@@ -2143,15 +2188,33 @@ class App{
         const tick=()=>{num.style.animation='none';void num.offsetWidth;num.style.animation='cPop .7s ease-out forwards';n--;if(n>0){num.textContent=n;setTimeout(tick,700);}else{ov.style.display='none';cb();}};
         setTimeout(tick,700);
     }
-    _gameOver(score){
+    async _gameOver(score){
         sfx.stopBGM();
-        saveScore(this.email,score);document.getElementById('final-score').textContent=score;this._renderRanking(score);this._show('ranking');
+        document.getElementById('final-score').textContent = score;
+        this._show('ranking');
+        // 로딩 표시
+        const list = document.getElementById('rank-list');
+        list.innerHTML = '<p style="color:#aaa;font-size:9px;text-align:center;padding:20px">저장 중...</p>';
+        await saveScore(this.email, score);
+        await this._renderRanking(score);
     }
-    _renderRanking(cur){
-        const top=topScores(),list=document.getElementById('rank-list');list.innerHTML='';
-        if(!top.length){list.innerHTML='<p style="color:#555;font-size:9px;text-align:center;padding:14px">아직 기록이 없습니다</p>';return;}
+    async _renderRanking(cur){
+        const list = document.getElementById('rank-list');
+        list.innerHTML = '<p style="color:#aaa;font-size:9px;text-align:center;padding:20px">불러오는 중...</p>';
+        const top = await topScores();
+        list.innerHTML = '';
+        if(!top.length){
+            list.innerHTML='<p style="color:#555;font-size:9px;text-align:center;padding:14px">아직 기록이 없습니다</p>';
+            return;
+        }
         const m=['🥇','🥈','🥉'];
-        top.forEach((r,i)=>{const el=document.createElement('div');el.className='rank-item'+(r.email===this.email&&r.score===cur?' me':'');el.innerHTML=`<span class="pos">${m[i]||i+1}</span><span class="em">${maskEmail(r.email)}</span><span class="sc">${r.score}</span>`;list.appendChild(el);});
+        top.forEach((r,i)=>{
+            const el=document.createElement('div');
+            const isMe = r.email===this.email && r.score===cur;
+            el.className='rank-item'+(isMe?' me':'');
+            el.innerHTML=`<span class="pos">${m[i]||i+1}</span><span class="em">${maskEmail(r.email)}</span><span class="sc">${r.score}점</span>`;
+            list.appendChild(el);
+        });
     }
     _show(n){Object.values(this.screens).forEach(s=>s.classList.remove('active'));this.screens[n].classList.add('active');}
 }
