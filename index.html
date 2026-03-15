@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ASNP NATPRO10 Event Game</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
@@ -284,6 +285,14 @@ const sfx=(()=>{
         collect(){tone(587,'square',.05,.12);tone(784,'square',.05,.1,.06);tone(988,'square',.1,.1,.12);},
         land(){tone(200,'triangle',.06,.06);},
         die(){[392,330,262,196].forEach((f,i)=>tone(f,'sawtooth',.25,.18,i*.15));},
+        firework(){
+            // 불꽃 폭발음: 랜덤한 고음 burst
+            const base=880+Math.random()*440;
+            [base,base*1.25,base*1.5].forEach((f,i)=>{
+                tone(f,'square',.08,.06,i*.04);
+                tone(f*0.5,'triangle',.12,.04,i*.04);
+            });
+        },
         toggleMute(){
             muted=!muted;
             if(muted) stopBGM();
@@ -494,7 +503,9 @@ class PlatformGame{
         this.gameTimeSec=0;     // 게임 경과 시간(초)
         this.giantSpawned={t2:false,t5:false,t10:false}; // 거대 한라봉 등장 여부
         // 점수 기반 이벤트 플래그
-        this.scoreEvents={mola150:false, king200:false, firework300:false, pinkDol500:false, sunset800:false, night1000:false, volcano1200:false};
+        this.scoreEvents={mola150:false, firework300:false, pinkDol500:false, sunset800:false, night1000:false, volcano1200:false};
+        this.lastKingScore=0;
+        this._nextKingGap = 100 + Math.floor(Math.random()*151); // 첫 등장 간격 100~250점
         this.fireworks=[];   // 불꽃놀이 파티클
         this.fireworkActive=false;
         this._fwTimer=0;
@@ -1119,7 +1130,7 @@ class PlatformGame{
                     x:fx,baseY:fy,bobY:fy,bobT:Math.random()*Math.PI*2,r:16
                 });
             }
-        } else if(roll < hallabongChance+0.27 && !isEarly && diff>0.5){
+        } else if(roll < hallabongChance+0.22){  // 초반부터 적 가능, 확률 22%
             // ── 적 (한라봉 없는 플랫폼만) ──
             const etype=Math.random()<0.5?'turtle':'octopus';
             const airborne=Math.random()<0.35; // 35% 공중 부유
@@ -1262,17 +1273,16 @@ class PlatformGame{
             if(m){ m.state='rising'; m.timer=0; m.x=this.W*(0.2+Math.random()*0.6); m.y=this.H+100; m.alpha=0; m.vy=-0.7; }
         }
 
-        // 200점: 대왕 한라봉 등장 (50점)
-        if(!ev.king200 && s >= 200){
-            ev.king200 = true;
-            const gY = this.H * 0.25 + Math.random() * this.H * 0.2;
+        // 대왕 한라봉: 랜덤 간격 (100~250점 사이 랜덤)
+        if(s > 0 && s >= this.lastKingScore + this._nextKingGap){
+            this.lastKingScore = s;
+            this._nextKingGap = 100 + Math.floor(Math.random()*151); // 다음 간격 100~250점
+            const gY = this.H * 0.2 + Math.random() * this.H * 0.25;
             this.items.push({
                 type:'king_hallabong',
                 x: this.W + 100, baseY: gY, bobY: gY,
                 bobT: Math.random()*Math.PI*2,
-                r: 72,        // 매우 큼
-                speedX: -1.8,
-                points: 50
+                r: 72, speedX: -1.8, points: 50
             });
         }
 
@@ -1305,6 +1315,7 @@ class PlatformGame{
         this._fwTimer += dt;
         if(this._fwTimer > 800){
             this._fwTimer = 0;
+            sfx.firework(); // 불꽃 폭발음
             // 화면 상단 랜덤 위치에서 폭발
             const ex = this.W * (0.15 + Math.random() * 0.7);
             const ey = this.H * (0.05 + Math.random() * 0.25);
@@ -2075,49 +2086,39 @@ class PlatformGame{
     }
 }
 
-/* ══ SUPABASE DB ══ */
+/* ══ SUPABASE DB (공식 SDK) ══ */
 const SB_URL = 'https://nzmxypocjksdggabeaqt.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56bXh5cG9jamtzZGdnYWJlYXF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1NDQ4MTUsImV4cCI6MjA4OTEyMDgxNX0.wiUkw5yTSvwkQI2__MqFOLeKEhP3hFf2jkXLFHgcJBM';
 
-// Supabase REST API 헬퍼
-async function sbFetch(path, options={}){
-    const res = await fetch(SB_URL + '/rest/v1' + path, {
-        headers: {
-            'apikey': SB_KEY,
-            'Authorization': 'Bearer ' + SB_KEY,
-            'Content-Type': 'application/json',
-            'Prefer': options.prefer || '',
-        },
-        ...options
-    });
-    return res;
-}
+// SDK 클라이언트 (CDN UMD → window.supabase)
+const _sb = window.supabase.createClient(SB_URL, SB_KEY);
 
-// 점수 저장 (매번 insert)
+// 점수 저장
 async function saveScore(email, score){
     try {
-        await sbFetch('/scores', {
-            method: 'POST',
-            prefer: 'return=minimal',
-            body: JSON.stringify({ email, score })
-        });
+        const { error } = await _sb.from('scores').insert({ email, score });
+        if(error) throw error;
     } catch(e) {
-        console.warn('Supabase 저장 실패, localStorage 폴백:', e);
-        const d = JSON.parse(localStorage.getItem('np10_scores')||'[]');
-        d.push({email, score});
-        localStorage.setItem('np10_scores', JSON.stringify(d));
+        console.error('[Supabase saveScore 실패]', e.message || e);
+        try {
+            const d = JSON.parse(localStorage.getItem('np10_scores')||'[]');
+            d.push({email, score});
+            localStorage.setItem('np10_scores', JSON.stringify(d));
+        } catch(_){}
     }
 }
 
-// TOP 10 조회 (이메일당 최고점수 기준)
+// TOP 10 조회 (이메일당 최고점수)
 async function topScores(){
     try {
-        const res = await sbFetch('/scores?select=email,score&order=score.desc&limit=200');
-        if(!res.ok) throw new Error(res.status);
-        const rows = await res.json();
-        // 이메일당 최고점수만
+        const { data, error } = await _sb
+            .from('scores')
+            .select('email, score')
+            .order('score', { ascending: false })
+            .limit(500);
+        if(error) throw error;
         const best = {};
-        rows.forEach(r => {
+        data.forEach(r => {
             if(!best[r.email] || r.score > best[r.email]) best[r.email] = r.score;
         });
         return Object.entries(best)
@@ -2125,15 +2126,17 @@ async function topScores(){
             .sort((a,b) => b.score - a.score)
             .slice(0, 10);
     } catch(e) {
-        console.warn('Supabase 조회 실패, localStorage 폴백:', e);
-        const d = JSON.parse(localStorage.getItem('np10_scores')||'[]');
-        const b = {};
-        d.forEach(r => { if(!b[r.email]||r.score>b[r.email]) b[r.email]=r.score; });
-        return Object.entries(b).map(([email,score])=>({email,score})).sort((a,c)=>c.score-a.score).slice(0,10);
+        console.error('[Supabase topScores 실패]', e.message || e);
+        try {
+            const d = JSON.parse(localStorage.getItem('np10_scores')||'[]');
+            const b = {};
+            d.forEach(r => { if(!b[r.email]||r.score>b[r.email]) b[r.email]=r.score; });
+            return Object.entries(b).map(([email,s])=>({email,score:s})).sort((a,c)=>c.score-a.score).slice(0,10);
+        } catch(_){ return []; }
     }
 }
 
-function maskEmail(e){const[l,d]=(e||'').split('@');return(l.length<=2?l[0]:l.slice(0,2))+'***@'+(d||'');}
+function maskEmail(e){return e||'';} // 이메일 전체 표기
 
 /* ══ APP ══ */
 class App{
